@@ -1,4 +1,4 @@
-﻿namespace EsoTech.MessageQueue.Tests.Handlers
+﻿namespace EsoTech.MessageQueue.Tests.Messages
 {
     sealed class MultiMsg
     {

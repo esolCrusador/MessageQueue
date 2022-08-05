@@ -13,53 +13,101 @@ namespace EsoTech.MessageQueue.Testing
     {
         private ILookup<Type, Func<object, CancellationToken, Task>> _handlers;
 
-        private IEnumerable<IMessageHandler> _handlerSources;
+        private IEnumerable<IEventMessageHandler> _eventHandlerSources;
+        private IEnumerable<ICommandMessageHandler> _commandHandleSources;
 
         public BlockingCollection<object> Messages { get; } = new BlockingCollection<object>();
 
         public FakeMessageQueue()
         {
-            _handlerSources = Enumerable.Empty<IMessageHandler>();
+            _eventHandlerSources = Enumerable.Empty<IEventMessageHandler>();
+            _commandHandleSources = Enumerable.Empty<ICommandMessageHandler>();
             _handlers = GetHandlersLookup();
         }
 
-        private ILookup<Type, Func<object, CancellationToken, Task>> GetHandlersLookup() =>
-            _handlerSources
+        private ILookup<Type, Func<object, CancellationToken, Task>> GetHandlersLookup()
+        {
+            var eventHandlers = _eventHandlerSources
                 .SelectMany(h =>
                 {
                     var type = h.GetType();
                     var interfaces = type.GetInterfaces()
-                        .Where(t => t.Name == $"{nameof(IMessageHandler)}`1");
+                        .Where(t => t.Name == $"{nameof(IEventMessageHandler)}`1");
 
-                    return interfaces.Select(i => new
+                    return interfaces.Select(i => new HandlerMetadata
                     {
                         TargetType = i.GenericTypeArguments[0],
                         InterfaceType = i,
                         Instance = h
                     });
-                })
+                });
+            var commandHandlers = _commandHandleSources.SelectMany(h =>
+            {
+                var type = h.GetType();
+                var interfaces = type.GetInterfaces()
+                    .Where(t => t.Name == $"{nameof(ICommandMessageHandler)}`1");
+
+                return interfaces.Select(i => new HandlerMetadata
+                {
+                    TargetType = i.GenericTypeArguments[0],
+                    InterfaceType = i,
+                    Instance = h
+                });
+            });
+            
+            return commandHandlers.Concat(eventHandlers)
                 .ToLookup(
                     h => h.TargetType,
                     h =>
                     {
                         return HandlerExtensions.CreateHandleDelegate(h.Instance, h.InterfaceType, "Handle");
                     });
+        }
 
-        internal void AddHandlers(IEnumerable<IMessageHandler> handlers)
+        private class HandlerMetadata
         {
-            _handlerSources = _handlerSources.Union(handlers);
+            public Type TargetType { get; set; }
+            public Type InterfaceType { get; set; }
+            public object Instance { get; set; }
+        }
+
+        internal void AddEventHandlers(IEnumerable<IEventMessageHandler> handlers)
+        {
+            _eventHandlerSources = _eventHandlerSources.Union(handlers);
             _handlers = GetHandlersLookup();
         }
 
-        public void AddHandler(IMessageHandler handler)
+        internal void AddCommandHandlers(IEnumerable<ICommandMessageHandler> handlers)
         {
-            _handlerSources = _handlerSources.Append(handler);
+            _commandHandleSources = _commandHandleSources.Union(handlers);
             _handlers = GetHandlersLookup();
         }
 
-        public void RemoveHandler(Type handlerType)
+        public void AddEventHandler(IEventMessageHandler handler)
         {
-            _handlerSources = _handlerSources.Where(x => x.GetType() != handlerType).ToList();
+            _eventHandlerSources = _eventHandlerSources.Append(handler);
+            _handlers = GetHandlersLookup();
+        }
+
+        public void AddCommandHandler(ICommandMessageHandler handler)
+        {
+            _commandHandleSources = _commandHandleSources.Append(handler);
+            _handlers = GetHandlersLookup();
+        }
+
+        public void RemoveEventHandler<THandler>()
+            where THandler: IEventMessageHandler
+        {
+            var handlerType = typeof(THandler);
+            _eventHandlerSources = _eventHandlerSources.Where(x => x.GetType() != handlerType).ToList();
+            _handlers = GetHandlersLookup();
+        }
+
+        public void RemoveCommandHandler<THandler>()
+            where THandler : ICommandMessageHandler
+        {
+            var handlerType = typeof(THandler);
+            _eventHandlerSources = _eventHandlerSources.Where(x => x.GetType() != handlerType).ToList();
             _handlers = GetHandlersLookup();
         }
 
@@ -132,22 +180,15 @@ namespace EsoTech.MessageQueue.Testing
             return false;
         }
 
-        public Task Send(object msg)
+        public ValueTask DisposeAsync() => default;
+
+        public Task SendEvent(object eventMessage) => Send(eventMessage);
+        public Task SendCommand(object commandMessage) => Send(commandMessage);
+
+        private Task Send(object msg)
         {
             Messages.Add(msg);
             return Task.CompletedTask;
-        }
-
-        public async Task SendAndHandle(object msg, int times = 1)
-        {
-            await Send(msg);
-            for (var i = 0; i < times; i++)
-                (await TryHandleNext()).Should().BeTrue();
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            return new ValueTask();
         }
     }
 }

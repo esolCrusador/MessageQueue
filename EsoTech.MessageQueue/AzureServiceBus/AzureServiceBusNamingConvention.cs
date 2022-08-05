@@ -7,12 +7,17 @@ namespace EsoTech.MessageQueue.AzureServiceBus
     {
         public string GetSubscriptionName(Type messageType, Type handlerType)
         {
-            return $"{GetServiceName(messageType)}_{GetServiceName(handlerType)}";
+            return $"{GetTopicName(messageType)}_{GetServiceName(handlerType)}";
         }
 
         public string GetTopicName(Type messageType)
         {
-            return GetServiceName(messageType);
+            return $"{GetServiceName(messageType)}";
+        }
+
+        public string GetQueueName(Type messageType)
+        {
+            return $"{GetServiceName(messageType)}commands";
         }
 
         public string GetSubscriptionFilterValue(Type messageType)

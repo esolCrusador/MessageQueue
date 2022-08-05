@@ -5,7 +5,10 @@ namespace EsoTech.MessageQueue.Testing
 {
     public class FakeMessageQueueInitializer
     {
-        public FakeMessageQueueInitializer(IEnumerable<IMessageHandler> handlers, FakeMessageQueue fakeMessageQueue) =>
-            fakeMessageQueue.AddHandlers(handlers);
+        public FakeMessageQueueInitializer(IEnumerable<IEventMessageHandler> eventHandlers, IEnumerable<ICommandMessageHandler> commandHandlers, FakeMessageQueue fakeMessageQueue)
+        {
+            fakeMessageQueue.AddEventHandlers(eventHandlers);
+            fakeMessageQueue.AddCommandHandlers(commandHandlers);
+        }
     }
 }

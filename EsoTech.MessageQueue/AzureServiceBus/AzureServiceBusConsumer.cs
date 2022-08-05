@@ -46,7 +46,8 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         private IObservable<Unit> _waitBeforeHandle;
         private Subject<Unit> _handleNext;
 
-        private readonly IEnumerable<IMessageHandler> _handlers;
+        private readonly IEnumerable<IEventMessageHandler> _eventHandlers;
+        private readonly IEnumerable<ICommandMessageHandler> _commandHandlers;
         private readonly TracerFactory _tracerFactory;
         private readonly MessageQueueConfiguration _messageQueueConfiguration;
         private readonly ServiceBusClient _serviceBusClient;
@@ -61,7 +62,8 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         private ITracer Tracer => _tracerFactory?.Tracer;
 
         public AzureServiceBusConsumer(
-            IEnumerable<IMessageHandler> handlers,
+            IEnumerable<IEventMessageHandler> eventHandlers,
+            IEnumerable<ICommandMessageHandler> commandHandlers,
             TracerFactory tracerFactory,
             MessageQueueConfiguration messageQueueConfiguration,
             AzureServiceBusNamingConvention namingConvention,
@@ -69,7 +71,8 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             MessageSerializer messageSerializer,
             ILogger<AzureServiceBusConsumer> logger)
         {
-            _handlers = handlers;
+            _eventHandlers = eventHandlers;
+            _commandHandlers = commandHandlers;
             _tracerFactory = tracerFactory;
             _messageQueueConfiguration = messageQueueConfiguration;
             _serviceBusClient = serviceBusClientHolder.Instance;
@@ -85,13 +88,14 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         }
 
         public AzureServiceBusConsumer(
-            IEnumerable<IMessageHandler> handlers,
+            IEnumerable<IEventMessageHandler> eventHandlers,
+            IEnumerable<ICommandMessageHandler> commandHandlers,
             MessageQueueConfiguration messageQueueConfiguration,
             AzureServiceBusNamingConvention namingConvention,
             AzureServiceBusClientHolder serviceBusClientHolder,
             MessageSerializer messageSerializer,
             ILogger<AzureServiceBusConsumer> logger)
-            : this(handlers,
+            : this(eventHandlers, commandHandlers,
                  null,
                  messageQueueConfiguration,
                  namingConvention,
@@ -104,13 +108,28 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         public async Task Initialize(CancellationToken cancellation)
         {
             _logger.LogInformation("Initializing service bus consumer.");
-            var methodName = nameof(IMessageHandler<int>.Handle);
+            const string methodName = "Handle";
 
-            var entries = _handlers
+            var eventHandlers = _eventHandlers
                 .SelectMany(h =>
                 {
                     var type = h.GetType();
-                    var interfaceName = typeof(IMessageHandler<>).Name;
+                    var interfaceName = typeof(IEventMessageHandler<>).Name;
+                    var interfaces = type.GetInterfaces()
+                        .Where(t => t.Name == interfaceName)
+                        .ToList();
+
+                    _logger.LogInformation(
+                        $"Message handler: {type.FullName} targets: {string.Join(",", interfaces.Select(x => x.GenericTypeArguments[0]))}");
+
+                    return interfaces.Select(i => new HandlerByMessageTypeEntry(h, i, methodName));
+                })
+                .ToArray();
+            var commandHandlers = _commandHandlers
+                .SelectMany(h =>
+                {
+                    var type = h.GetType();
+                    var interfaceName = typeof(ICommandMessageHandler<>).Name;
                     var interfaces = type.GetInterfaces()
                         .Where(t => t.Name == interfaceName)
                         .ToList();
@@ -122,8 +141,10 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                 })
                 .ToArray();
 
-            _handlersByMessageType = entries.ToLookup(x => x.MessageType.GUID);
-            _processors = await Subscribe(entries, cancellation);
+            _handlersByMessageType = eventHandlers.Concat(commandHandlers).ToLookup(x => x.MessageType.GUID);
+            var eventProcessors = await SubscribeOnEvents(eventHandlers, cancellation);
+            var commandProcessors = await SubscribeOnCommands(commandHandlers, cancellation);
+            _processors = eventProcessors.Concat(commandProcessors).ToList();
             _initialized = true;
 
             _logger.LogInformation("Message queue initialized.");
@@ -177,7 +198,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             _handleNext?.Dispose();
         }
 
-        private async Task<IList<ServiceBusProcessor>> Subscribe(HandlerByMessageTypeEntry[] handlerInfos, CancellationToken cancellation)
+        private async Task<IList<ServiceBusProcessor>> SubscribeOnEvents(HandlerByMessageTypeEntry[] handlerInfos, CancellationToken cancellation)
         {
             var processors = new List<ServiceBusProcessor>();
             var byTopic = handlerInfos.GroupBy(x => _namingConvention.GetTopicName(x.MessageType));
@@ -213,6 +234,38 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 
             return processors;
         }
+
+        private async Task<IList<ServiceBusProcessor>> SubscribeOnCommands(HandlerByMessageTypeEntry[] handlerInfos, CancellationToken cancellation)
+        {
+            var processors = new List<ServiceBusProcessor>();
+            var byTopic = handlerInfos.GroupBy(x => _namingConvention.GetQueueName(x.MessageType));
+
+            foreach (var group in byTopic)
+            {
+                var topicName = group.Key;
+
+                _logger.LogInformation("Subscribing to topic {TopicName}", topicName);
+
+                var processor = _serviceBusClient.CreateProcessor(topicName,
+                    new ServiceBusProcessorOptions
+                    {
+                        ReceiveMode = ServiceBusReceiveMode.PeekLock,
+                        MaxConcurrentCalls = _messageQueueConfiguration.MaxConcurrentMessages,
+                        MaxAutoLockRenewalDuration = TimeSpan.Zero,
+                        AutoCompleteMessages = false
+                    });
+
+                processor.ProcessMessageAsync += ProcessMessage;
+                processor.ProcessErrorAsync += ProcessError;
+
+                await processor.StartProcessingAsync(cancellation);
+
+                processors.Add(processor);
+            }
+
+            return processors;
+        }
+
 
         private async Task ProcessMessage(ProcessMessageEventArgs args)
         {
@@ -328,7 +381,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 
             public Type HandlerType { get; }
 
-            public HandlerByMessageTypeEntry(IMessageHandler instance, Type interfaceType, string methodName)
+            public HandlerByMessageTypeEntry(object instance, Type interfaceType, string methodName)
             {
                 MessageType = interfaceType.GetGenericArguments()[0];
                 Handle = new Lazy<Func<object, CancellationToken, Task>>(

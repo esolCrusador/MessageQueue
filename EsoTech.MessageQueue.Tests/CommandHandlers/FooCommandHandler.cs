@@ -4,9 +4,9 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace EsoTech.MessageQueue.Tests.Handlers
+namespace EsoTech.MessageQueue.Tests.CommandHandlers
 {
-    class FooHandler : IMessageHandler<FooMsg>
+    class FooCommandHandler : ICommandMessageHandler<FooMsg>
     {
         private readonly List<FooMsg> _log = new List<FooMsg>();
 

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Concurrent;
+using System.Linq;
 using System.Threading.Tasks;
 using Azure.Messaging.ServiceBus;
 using EsoTech.MessageQueue.Abstractions;
@@ -43,7 +44,18 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             _logger = logger;
         }
 
-        public async Task Send(object msg)
+        public Task SendEvent(object eventMessage) => Send(eventMessage, _namingConvention.GetTopicName(eventMessage.GetType()));
+
+        public Task SendCommand(object commandMessage) => Send(commandMessage, _namingConvention.GetQueueName(commandMessage.GetType()));
+
+        public async ValueTask DisposeAsync()
+        {
+            await Task.WhenAll(
+                _sendersByTopic.Values.Select(s => s.DisposeAsync().AsTask())
+            );
+        }
+
+        private async Task Send(object msg, string queueName)
         {
             ISpan span = null;
 
@@ -71,8 +83,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                 }
 
                 var bytes = _messageSerializer.Serialize(wrapped);
-                var topicName = _namingConvention.GetTopicName(type);
-                var sender = _sendersByTopic.GetOrAdd(topicName, t => _serviceBusClient.CreateSender(t));
+                var sender = _sendersByTopic.GetOrAdd(queueName, t => _serviceBusClient.CreateSender(t));
 
                 var message = new ServiceBusMessage(bytes)
                 {
@@ -94,16 +105,6 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             finally
             {
                 span?.Finish();
-            }
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            foreach (var entry in _sendersByTopic)
-            {
-                var sender = entry.Value;
-
-                await sender.DisposeAsync();
             }
         }
     }

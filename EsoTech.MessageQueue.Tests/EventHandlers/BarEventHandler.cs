@@ -5,9 +5,9 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace EsoTech.MessageQueue.Tests.Handlers
+namespace EsoTech.MessageQueue.Tests.EventHandlers
 {
-    class BarHandler : IMessageHandler<BarMsg>, IMessageHandler<NeverSentMsg>
+    class BarEventHandler : IEventMessageHandler<BarMsg>, IEventMessageHandler<NeverSentMsg>
     {
         private readonly List<BarMsg> _log = new List<BarMsg>();
 

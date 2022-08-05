@@ -1,12 +1,12 @@
 ﻿using EsoTech.MessageQueue.Abstractions;
-using EsoTech.MessageQueue.Tests.Handlers;
+using EsoTech.MessageQueue.Tests.Messages;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace EsoTech.MessageQueue.Tests.Messages
+namespace EsoTech.MessageQueue.Tests.CommandHandlers
 {
-    class MultiHandler1 : IMessageHandler<MultiMsg>
+    class MultiCommandHandler2 : ICommandMessageHandler<MultiMsg>
     {
         private readonly List<MultiMsg> _log = new List<MultiMsg>();
 

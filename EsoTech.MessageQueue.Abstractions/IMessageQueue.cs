@@ -4,6 +4,7 @@ namespace EsoTech.MessageQueue.Abstractions
 {
     public interface IMessageQueue
     {
-        Task Send(object msg);
+        Task SendEvent(object eventMessage);
+        Task SendCommand(object commandMessage);
     }
 }

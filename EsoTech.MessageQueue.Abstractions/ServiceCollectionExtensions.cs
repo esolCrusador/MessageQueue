@@ -5,17 +5,35 @@ namespace EsoTech.MessageQueue.Abstractions
 {
     public static class ServiceCollectionExtensions
     {
-        public static IServiceCollection AddMessageHandler<T>(this IServiceCollection self) where T : class, IMessageHandler
+        public static IServiceCollection AddEventMessageHandler<TEventHandler>(this IServiceCollection self) 
+            where TEventHandler : class, IEventMessageHandler
         {
-            self.AddSingleton<T>();
-            self.AddSingleton<IMessageHandler>(ctx => ctx.GetRequiredService<T>());
+            self.AddSingleton<TEventHandler>();
+            self.AddSingleton<IEventMessageHandler>(ctx => ctx.GetRequiredService<TEventHandler>());
             return self;
         }
 
-        public static IServiceCollection TryAddMessageHandler<T>(this IServiceCollection self) where T : class, IMessageHandler
+        public static IServiceCollection TryAddEventMessageHandler<TEventHandler>(this IServiceCollection self) 
+            where TEventHandler : class, IEventMessageHandler
         {
-            self.TryAddSingleton<T>();
-            self.AddSingleton<IMessageHandler>(ctx => ctx.GetRequiredService<T>());
+            self.TryAddSingleton<TEventHandler>();
+            self.AddSingleton<IEventMessageHandler>(ctx => ctx.GetRequiredService<TEventHandler>());
+            return self;
+        }
+
+        public static IServiceCollection AddCommandMessageHandler<TCommandHandler>(this IServiceCollection self)
+            where TCommandHandler : class, ICommandMessageHandler
+        {
+            self.AddSingleton<TCommandHandler>();
+            self.AddSingleton<ICommandMessageHandler>(ctx => ctx.GetRequiredService<TCommandHandler>());
+            return self;
+        }
+
+        public static IServiceCollection TryAddCommandMessageHandler<TCommandHandler>(this IServiceCollection self) 
+            where TCommandHandler : class, ICommandMessageHandler
+        {
+            self.TryAddSingleton<TCommandHandler>();
+            self.AddSingleton<ICommandMessageHandler>(ctx => ctx.GetRequiredService<TCommandHandler>());
             return self;
         }
 

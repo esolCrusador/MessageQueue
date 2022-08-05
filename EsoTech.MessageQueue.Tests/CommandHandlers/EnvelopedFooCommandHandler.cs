@@ -4,9 +4,9 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace EsoTech.MessageQueue.Tests.Handlers
+namespace EsoTech.MessageQueue.Tests.CommandHandlers
 {
-    class EnvelopedFooHandler : IMessageHandler<Envelope<FooMsg>>
+    class EnvelopedFooCommandHandler : ICommandMessageHandler<Envelope<FooMsg>>
     {
         private readonly List<Envelope<FooMsg>> _log = new List<Envelope<FooMsg>>();
 
