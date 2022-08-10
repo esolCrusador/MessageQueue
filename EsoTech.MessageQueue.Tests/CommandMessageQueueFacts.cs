@@ -10,6 +10,7 @@ using Microsoft.Extensions.Configuration;
 using EsoTech.MessageQueue.Tests.Messages;
 using System.Threading;
 using EsoTech.MessageQueue.Tests.CommandHandlers;
+using EsoTech.MessageQueue.AzureServiceBus;
 
 namespace EsoTech.MessageQueue.Tests
 {
@@ -57,6 +58,12 @@ namespace EsoTech.MessageQueue.Tests
             )
             {
             }
+
+            [Fact]
+            public async Task PuregeAll_Should_Clean_Up_Queues()
+            {
+                await _azureServiceBusManager.PurgeAll();
+            }
         }
 
         protected CommandMessageQueueFacts(IServiceProvider serviceProvider)
@@ -70,6 +77,7 @@ namespace EsoTech.MessageQueue.Tests
             _barHandler = serviceProvider.GetRequiredService<BarCommandHandler>();
             _handler1 = serviceProvider.GetRequiredService<MultiCommandHandler1>();
             _handler2 = serviceProvider.GetRequiredService<MultiCommandHandler2>();
+            _azureServiceBusManager = serviceProvider.GetService<AzureServiceBusManager>();
         }
 
 
@@ -101,6 +109,7 @@ namespace EsoTech.MessageQueue.Tests
         private readonly MultiCommandHandler1 _handler1;
 
         private readonly MultiCommandHandler2 _handler2;
+        private readonly AzureServiceBusManager _azureServiceBusManager;
 
         [Fact]
         public async Task Send_Should_Not_Invoke_Handlers()

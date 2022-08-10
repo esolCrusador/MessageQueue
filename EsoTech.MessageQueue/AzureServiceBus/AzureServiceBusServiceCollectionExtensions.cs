@@ -2,6 +2,7 @@
 using EsoTech.MessageQueue.AzureServiceBus;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace EsoTech.MessageQueue.AzureServiceBus
 {
@@ -13,6 +14,11 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             self.TryAddSingleton<AzureServiceBusNamingConvention>();
             self.TryAddSingleton<IMessageQueue, AzureServiceBusMessageSender>();
             self.TryAddSingleton<IMessageConsumer, AzureServiceBusConsumer>();
+            self.TryAddSingleton(s => new AzureServiceBusManager(
+                s.GetRequiredService<MessageQueueConfiguration>().AzureServiceBusConfiguration,
+                s.GetRequiredService<AzureServiceBusNamingConvention>(),
+                s.GetRequiredService<ILogger<AzureServiceBusManager>>())
+            );
 
             return self;
         }

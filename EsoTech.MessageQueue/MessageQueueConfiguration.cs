@@ -1,4 +1,6 @@
-﻿namespace EsoTech.MessageQueue
+﻿using EsoTech.MessageQueue.AzureServiceBus;
+
+namespace EsoTech.MessageQueue
 {
     internal class MessageQueueConfiguration
     {
@@ -8,7 +10,7 @@
         public bool HandleRealtime { get; }
         public int MaxRedeliveryCount { get; }
         public int MaxConcurrentMessages { get; }
-        public string ConnectionString { get; }
+        public AzureServiceBusConfiguration AzureServiceBusConfiguration { get; }
 
         public MessageQueueConfiguration(string clientId,
             string serviceName,
@@ -16,7 +18,7 @@
             bool handleRealtime,
             int maxRedeliveryCount,
             int maxConcurrentMessages,
-            string connectionString)
+            AzureServiceBusConfiguration azureServiceBusConfiguration)
         {
             ClientId = clientId;
             ServiceName = serviceName;
@@ -24,7 +26,7 @@
             HandleRealtime = handleRealtime;
             MaxRedeliveryCount = maxRedeliveryCount;
             MaxConcurrentMessages = maxConcurrentMessages;
-            ConnectionString = connectionString;
+            AzureServiceBusConfiguration = azureServiceBusConfiguration;
         }
     }
 }

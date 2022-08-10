@@ -53,6 +53,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         private readonly ServiceBusClient _serviceBusClient;
         private readonly AzureServiceBusNamingConvention _namingConvention;
         private readonly MessageSerializer _messageSerializer;
+        private readonly AzureServiceBusManager _azureServiceBusManager;
         private readonly ILogger<AzureServiceBusConsumer> _logger;
 
         private ILookup<Guid, HandlerByMessageTypeEntry> _handlersByMessageType;
@@ -69,6 +70,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             AzureServiceBusNamingConvention namingConvention,
             AzureServiceBusClientHolder serviceBusClientHolder,
             MessageSerializer messageSerializer,
+            AzureServiceBusManager azureServiceBusManager,
             ILogger<AzureServiceBusConsumer> logger)
         {
             _eventHandlers = eventHandlers;
@@ -78,6 +80,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             _serviceBusClient = serviceBusClientHolder.Instance;
             _namingConvention = namingConvention;
             _messageSerializer = messageSerializer;
+            _azureServiceBusManager = azureServiceBusManager;
             _logger = logger;
 
             if (!_messageQueueConfiguration.HandleRealtime)
@@ -94,6 +97,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             AzureServiceBusNamingConvention namingConvention,
             AzureServiceBusClientHolder serviceBusClientHolder,
             MessageSerializer messageSerializer,
+            AzureServiceBusManager azureServiceBusManager,
             ILogger<AzureServiceBusConsumer> logger)
             : this(eventHandlers, commandHandlers,
                  null,
@@ -101,6 +105,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                  namingConvention,
                  serviceBusClientHolder,
                  messageSerializer,
+                 azureServiceBusManager,
                  logger)
         {
         }
@@ -207,11 +212,14 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             {
                 var topicName = group.Key;
                 var subscriptions = group
-                    .Select(x => _namingConvention.GetSubscriptionName(x.MessageType, x.HandlerType))
-                    .Distinct();
+                    .Select(x => new KeyValuePair<string, Type>(_namingConvention.GetSubscriptionName(x.MessageType, x.HandlerType), x.MessageType))
+                    .GroupBy(kvp => kvp.Key, kvp => kvp.Value)
+                    .ToList();
 
-                foreach (var subscriptionName in subscriptions)
+                foreach (var subscriptionMessages in subscriptions)
                 {
+                    var subscriptionName = subscriptionMessages.Key;
+                    await _azureServiceBusManager.UpdateSubscription(topicName, subscriptionName, subscriptionMessages);
                     _logger.LogInformation("Subscribing to topic {TopicName}, subscription {SubscriptionName}", topicName, subscriptionName);
 
                     var processor = _serviceBusClient.CreateProcessor(topicName, subscriptionName,
@@ -238,15 +246,16 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         private async Task<IList<ServiceBusProcessor>> SubscribeOnCommands(HandlerByMessageTypeEntry[] handlerInfos, CancellationToken cancellation)
         {
             var processors = new List<ServiceBusProcessor>();
-            var byTopic = handlerInfos.GroupBy(x => _namingConvention.GetQueueName(x.MessageType));
+            var byQueue = handlerInfos.GroupBy(x => _namingConvention.GetQueueName(x.MessageType));
 
-            foreach (var group in byTopic)
+            foreach (var group in byQueue)
             {
-                var topicName = group.Key;
+                var queueName = group.Key;
 
-                _logger.LogInformation("Subscribing to topic {TopicName}", topicName);
+                await _azureServiceBusManager.UpdateQueue(queueName);
+                _logger.LogInformation("Subscribing to topic {TopicName}", queueName);
 
-                var processor = _serviceBusClient.CreateProcessor(topicName,
+                var processor = _serviceBusClient.CreateProcessor(queueName,
                     new ServiceBusProcessorOptions
                     {
                         ReceiveMode = ServiceBusReceiveMode.PeekLock,

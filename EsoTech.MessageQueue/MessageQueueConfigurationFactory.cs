@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Linq;
 using Microsoft.Extensions.Configuration;
 using EsoTech.MessageQueue.Abstractions;
+using EsoTech.MessageQueue.AzureServiceBus;
 
 namespace EsoTech.MessageQueue
 {
@@ -37,11 +38,14 @@ namespace EsoTech.MessageQueue
         {
         }
 
-        public MessageQueueConfiguration Create(string connectionStringName, string clientId, int ackTimeoutMilliseconds, string serviceName, int maxRedeliveryCount, int maxConcurrentMessages)
+        public MessageQueueConfiguration Create(string connectionStringName, string clientId, int ackTimeoutMilliseconds, string serviceName, int maxRedeliveryCount, int maxConcurrentMessages, Action<AzureServiceBusConfiguration> updateConfiguration)
         {
             if (serviceName == null)
                 serviceName = _httpContextAccessor?.HttpContext?.RequestServices?.GetService<IHostEnvironment>()?.ApplicationName ??
                               Assembly.GetEntryAssembly()?.GetName().Name?.Split('.').Skip(1).First();
+
+            var serviceBusConfiguration = new AzureServiceBusConfiguration(_configuration.GetConnectionString(connectionStringName) ?? connectionStringName);
+            updateConfiguration(serviceBusConfiguration);
 
             return new MessageQueueConfiguration(
                 (clientId ?? _configuration.GetValue<string>("WEBSITE_SITE_NAME", serviceName)).ToLowerInvariant(),
@@ -50,7 +54,7 @@ namespace EsoTech.MessageQueue
                 _continuousPollingSuppressor == null,
                 maxRedeliveryCount,
                 maxConcurrentMessages,
-                _configuration.GetConnectionString(connectionStringName) ?? connectionStringName
+                serviceBusConfiguration
             );
         }
     }
