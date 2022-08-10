@@ -46,13 +46,10 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                         MaxDeliveryCount = _configuration.MaxDeliveryCount,
                         DefaultMessageTimeToLive = _configuration.DefaultMessageTimeToLive
                     });
-                var messageRules = messageTypes.Distinct().ToDictionary(mt =>
-                {
-                    var typeName = _namingConvention.GetSubscriptionFilterValue(mt);
-                    string prefix = GetTypeNamePrefix(mt, 50 - 1 - typeName.Length);
-
-                    return $"{prefix}-{typeName}";
-                }, mt => _namingConvention.GetSubscriptionFilterValue(mt));
+                var messageRules = messageTypes.Distinct().ToDictionary(
+                    mt => _namingConvention.GetSubscriptionFilterName(mt, 50), 
+                    mt => _namingConvention.GetSubscriptionFilterValue(mt)
+                );
 
                 var rules = await GetAllRules(topicName, subscriptionName);
                 var rulesToDelete = rules.Where(r => !messageRules.ContainsKey(r.Name));
@@ -139,23 +136,6 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 
             return entitites;
         }
-
-        private string GetTypeNamePrefix(Type mt, int maxLength)
-        {
-            string prefix = Truncate(mt.Name, maxLength);
-            Type genericArgumentType = mt;
-            int tildaIndex;
-            while ((tildaIndex = prefix.LastIndexOf('`')) != -1)
-            {
-                genericArgumentType = genericArgumentType.GetGenericArguments()[0];
-                prefix = Truncate($"{prefix.Substring(0, tildaIndex)}-{genericArgumentType.Name}", maxLength);
-            }
-
-            return prefix;
-        }
-
-        private string Truncate(string str, int maxLength) =>
-            str.Length <= maxLength ? str : str.Substring(0, maxLength);
 
         public async Task PurgeAll()
         {
