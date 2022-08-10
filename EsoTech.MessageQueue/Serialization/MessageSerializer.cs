@@ -1,11 +1,10 @@
 ﻿using System;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Serialization;
 using Prometheus;
 
-namespace EsoTech.MessageQueue
+namespace EsoTech.MessageQueue.Serialization
 {
     internal class MessageSerializer
     {
@@ -14,11 +13,9 @@ namespace EsoTech.MessageQueue
         private static readonly Histogram DeliveryTime =
             Metrics.CreateHistogram("message_queue_delivery_time_milliseconds", "Time in flight for message queue messages.");
 
-        private static readonly JsonSerializerSettings JsonSettings = new JsonSerializerSettings
+        private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
-            TypeNameAssemblyFormatHandling = TypeNameAssemblyFormatHandling.Simple,
-            TypeNameHandling = TypeNameHandling.All,
-            SerializationBinder = new MessageTypeRenamedSerializationBinder()
+            Converters = { new MessageConverter() }
         };
 
         public MessageSerializer(ILogger<MessageSerializer> logger)
@@ -30,20 +27,16 @@ namespace EsoTech.MessageQueue
         {
             msg.TimestampInTicks = DateTime.UtcNow.Ticks;
 
-            var utf8 = JsonConvert.SerializeObject(msg, JsonSettings);
-            var bytes = Encoding.UTF8.GetBytes(utf8);
-
-            return bytes;
+            return JsonSerializer.SerializeToUtf8Bytes(msg, JsonOptions);
         }
 
         public Message Deserialize(ReadOnlySpan<byte> bytes)
         {
-            var utf8 = Encoding.UTF8.GetString(bytes);
-            var deserialized = JsonConvert.DeserializeObject<Message>(utf8, JsonSettings);
+            var deserialized = JsonSerializer.Deserialize<Message>(bytes, JsonOptions);
 
             if (deserialized?.TimestampInTicks != null)
             {
-                var timeToDeliver = DateTime.UtcNow.Ticks - deserialized.TimestampInTicks.Value;
+                var timeToDeliver = DateTime.UtcNow.Ticks - deserialized.TimestampInTicks;
                 var timeSpan = TimeSpan.FromTicks(Math.Max(timeToDeliver, 0));
 
                 DeliveryTime.Observe(timeSpan.TotalMilliseconds);
@@ -67,18 +60,6 @@ namespace EsoTech.MessageQueue
                 msg = null;
 
                 return false;
-            }
-        }
-
-        // TODO: Remove it when migration to azure service bus is done.
-        internal class MessageTypeRenamedSerializationBinder : DefaultSerializationBinder
-        {
-            public override Type BindToType(string assemblyName, string typeName)
-            {
-                if (typeName == "EsoTech.MessageQueue.Nats.Message")
-                    return typeof(Message);
-
-                return base.BindToType(assemblyName, typeName);
             }
         }
     }
