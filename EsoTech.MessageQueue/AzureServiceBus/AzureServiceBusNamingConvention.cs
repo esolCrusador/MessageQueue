@@ -22,7 +22,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 
         public string GetSubscriptionFilterValue(Type messageType)
         {
-            return messageType.ToString();
+            return messageType.GUID.ToString("N");
         }
 
         private static string GetServiceName(Type type)

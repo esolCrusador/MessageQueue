@@ -15,14 +15,13 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 {
     internal class AzureServiceBusMessageSender : IMessageQueue, IAsyncDisposable
     {
-        private const string MessageKindProperty = "EsoTechMessageKind";
-
         private readonly ServiceBusClient _serviceBusClient;
         private readonly AzureServiceBusNamingConvention _namingConvention;
         private readonly MessageSerializer _messageSerializer;
         private readonly MessageQueueConfiguration _messageQueueConfiguration;
+        private readonly AzureServiceBusManager _azureServiceBusManager;
         private readonly TracerFactory _tracerFactory;
-        private readonly ConcurrentDictionary<string, ServiceBusSender> _sendersByTopic;
+        private readonly ConcurrentDictionary<string, Task<ServiceBusSender>> _sendersByTopic;
         private readonly ILogger<AzureServiceBusMessageSender> _logger;
 
         private ITracer Tracer => _tracerFactory.Tracer;
@@ -33,29 +32,49 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             MessageSerializer messageSerializer,
             MessageQueueConfiguration messageQueueConfiguration,
             AzureServiceBusClientHolder serviceBusClientHolder,
+            AzureServiceBusManager azureServiceBusManager,
             ILogger<AzureServiceBusMessageSender> logger)
         {
-            _sendersByTopic = new ConcurrentDictionary<string, ServiceBusSender>();
+            _sendersByTopic = new ConcurrentDictionary<string, Task<ServiceBusSender>>();
             _tracerFactory = tracerFactory;
             _serviceBusClient = serviceBusClientHolder.Instance;
             _namingConvention = namingConvention;
             _messageSerializer = messageSerializer;
             _messageQueueConfiguration = messageQueueConfiguration;
+            _azureServiceBusManager = azureServiceBusManager;
             _logger = logger;
         }
 
-        public Task SendEvent(object eventMessage) => Send(eventMessage, _namingConvention.GetTopicName(eventMessage.GetType()));
+        public async Task SendEvent(object eventMessage)
+        {
+            var sender = await _sendersByTopic.GetOrAdd(_namingConvention.GetTopicName(eventMessage.GetType()), async topickName =>
+            {
+                await _azureServiceBusManager.UpdateTopic(topickName);
+                return _serviceBusClient.CreateSender(topickName);
+            });
 
-        public Task SendCommand(object commandMessage) => Send(commandMessage, _namingConvention.GetQueueName(commandMessage.GetType()));
+            await Send(sender, eventMessage);
+        }
+
+        public async Task SendCommand(object commandMessage)
+        {
+            var sender = await _sendersByTopic.GetOrAdd(_namingConvention.GetQueueName(commandMessage.GetType()), async queueName =>
+            {
+                await _azureServiceBusManager.UpdateQueue(queueName);
+                return _serviceBusClient.CreateSender(queueName);
+            });
+
+            await Send(sender, commandMessage);
+        }
 
         public async ValueTask DisposeAsync()
         {
             await Task.WhenAll(
-                _sendersByTopic.Values.Select(s => s.DisposeAsync().AsTask())
+                _sendersByTopic.Values.Select(async s => await (await s).DisposeAsync().AsTask())
             );
         }
 
-        private async Task Send(object msg, string queueName)
+        private async Task Send(ServiceBusSender sender, object msg)
         {
             ISpan span = null;
 
@@ -83,14 +102,13 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                 }
 
                 var bytes = _messageSerializer.Serialize(wrapped);
-                var sender = _sendersByTopic.GetOrAdd(queueName, t => _serviceBusClient.CreateSender(t));
 
                 var message = new ServiceBusMessage(bytes)
                 {
                     ApplicationProperties =
                     {
                         // Warning: subscription filters use this property, don't change.
-                        { MessageKindProperty, _namingConvention.GetSubscriptionFilterValue(msg.GetType()) }
+                        ["EsoTechMessageKind"] = _namingConvention.GetSubscriptionFilterValue(msg.GetType())
                     }
                 };
 

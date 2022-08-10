@@ -10,6 +10,6 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         public ServiceBusClient Instance { get; }
 
         public AzureServiceBusClientHolder(MessageQueueConfiguration configuration) =>
-            Instance = new ServiceBusClient(configuration.ConnectionString);
+            Instance = new ServiceBusClient(configuration.AzureServiceBusConfiguration.ConnectionString);
     }
 }
