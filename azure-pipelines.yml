@@ -7,7 +7,6 @@ trigger:
 - main
 
 pool:
-  demands: Limit -equals DisAbleParallel 
   vmImage: 'windows-latest'
 
 variables:
