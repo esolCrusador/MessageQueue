@@ -12,9 +12,6 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 {
     public class AzureServiceBusManager
     {
-        private readonly Dictionary<string, HashSet<string>> _topicks = new Dictionary<string, HashSet<string>>();
-        private readonly HashSet<string> _queues = new HashSet<string>();
-
         private ManagementClient _client;
         private readonly AzureServiceBusConfiguration _configuration;
         private readonly AzureServiceBusNamingConvention _namingConvention;
@@ -37,40 +34,39 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             var stopwatch = new Stopwatch();
             stopwatch.Start();
 
-            var subscriptions = _topicks[topicName];
-            if (!subscriptions.Contains(subscriptionName))
-            {
-                if (!await Client.SubscriptionExistsAsync(topicName, subscriptionName))
-                    await Client.CreateSubscriptionAsync(new SubscriptionDescription(topicName, subscriptionName)
-                    {
-                        MaxDeliveryCount = _configuration.MaxDeliveryCount,
-                        DefaultMessageTimeToLive = _configuration.DefaultMessageTimeToLive
-                    });
-                var messageRules = messageTypes.Distinct().ToDictionary(
-                    mt => _namingConvention.GetSubscriptionFilterName(mt, 50), 
-                    mt => _namingConvention.GetSubscriptionFilterValue(mt)
-                );
-
-                var rules = await GetAllRules(topicName, subscriptionName);
-                var rulesToDelete = rules.Where(r => !messageRules.ContainsKey(r.Name));
-                foreach (var rule in rulesToDelete)
-                    await Client.DeleteRuleAsync(topicName, subscriptionName, rule.Name);
-                var messageTypesToAdd = messageRules.Where(kvp => !rules.Any(r => r.Name == kvp.Key));
-                foreach (var (ruleName, messageType) in messageTypesToAdd)
-                    await Client.CreateRuleAsync(topicName, subscriptionName, new RuleDescription
-                    {
-                        Name = ruleName,
-                        Filter = new CorrelationFilter
-                        {
-                            Properties = { ["EsoTechMessageKind"] = messageType }
-                        }
-                    });
-
-                subscriptions.Add(subscriptionName);
-            }
+            if (!await Client.SubscriptionExistsAsync(topicName, subscriptionName))
+                await Client.CreateSubscriptionAsync(new SubscriptionDescription(topicName, subscriptionName)
+                {
+                    MaxDeliveryCount = _configuration.MaxDeliveryCount,
+                    DefaultMessageTimeToLive = _configuration.DefaultMessageTimeToLive
+                });
+            await UpdateRules(topicName, subscriptionName, messageTypes);
 
             stopwatch.Stop();
             _logger.LogInformation($"Subscription {subscriptionName} updated for {stopwatch.ElapsedMilliseconds}ms");
+        }
+
+        private async Task UpdateRules(string topicName, string subscriptionName, IEnumerable<Type> messageTypes)
+        {
+            var messageRules = messageTypes.Distinct().ToDictionary(
+                mt => _namingConvention.GetSubscriptionFilterName(mt, 50),
+                mt => _namingConvention.GetSubscriptionFilterValue(mt)
+            );
+
+            var rules = await GetAllRules(topicName, subscriptionName);
+            var rulesToDelete = rules.Where(r => !messageRules.ContainsKey(r.Name));
+            foreach (var rule in rulesToDelete)
+                await Client.DeleteRuleAsync(topicName, subscriptionName, rule.Name);
+            var messageTypesToAdd = messageRules.Where(kvp => !rules.Any(r => r.Name == kvp.Key));
+            foreach (var (ruleName, messageType) in messageTypesToAdd)
+                await Client.CreateRuleAsync(topicName, subscriptionName, new RuleDescription
+                {
+                    Name = ruleName,
+                    Filter = new CorrelationFilter
+                    {
+                        Properties = { ["EsoTechMessageKind"] = messageType }
+                    }
+                });
         }
 
         public async Task UpdateTopic(string topicName)
@@ -79,16 +75,12 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             var stopwatch = new Stopwatch();
             stopwatch.Start();
 
-            if (!_topicks.ContainsKey(topicName))
-            {
-                if (!await Client.TopicExistsAsync(topicName))
-                    await Client.CreateTopicAsync(new TopicDescription(topicName)
-                    {
-                        MaxSizeInMB = _configuration.MaxSizeInMB,
-                        DefaultMessageTimeToLive = _configuration.DefaultMessageTimeToLive
-                    });
-                _topicks.Add(topicName, new HashSet<string>());
-            }
+            if (!await Client.TopicExistsAsync(topicName))
+                await Client.CreateTopicAsync(new TopicDescription(topicName)
+                {
+                    MaxSizeInMB = _configuration.MaxSizeInMB,
+                    DefaultMessageTimeToLive = _configuration.DefaultMessageTimeToLive
+                });
 
             stopwatch.Stop();
             _logger.LogInformation($"Topick {topicName} updated for {stopwatch.ElapsedMilliseconds}ms");
@@ -100,16 +92,12 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             var stopwatch = new Stopwatch();
             stopwatch.Start();
 
-            if (!_queues.Contains(queueName))
-            {
-                if (!await Client.QueueExistsAsync(queueName))
-                    await Client.CreateQueueAsync(new QueueDescription(queueName)
-                    {
-                        MaxSizeInMB = _configuration.MaxSizeInMB,
-                        DefaultMessageTimeToLive = _configuration.DefaultMessageTimeToLive
-                    });
-                _queues.Add(queueName);
-            }
+            if (!await Client.QueueExistsAsync(queueName))
+                await Client.CreateQueueAsync(new QueueDescription(queueName)
+                {
+                    MaxSizeInMB = _configuration.MaxSizeInMB,
+                    DefaultMessageTimeToLive = _configuration.DefaultMessageTimeToLive
+                });
 
             stopwatch.Stop();
             _logger.LogInformation($"Queue {queueName} updated for {stopwatch.ElapsedMilliseconds}ms");
@@ -124,15 +112,18 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             const int take = 100;
 
             IList<TEntity> entitites = null;
+            IList<TEntity> loadedEntities;
             do
             {
-                var loadedRules = await fetch(take, skip);
+                loadedEntities = await fetch(take, skip);
                 if (entitites == null)
-                    entitites = loadedRules;
+                    entitites = loadedEntities;
                 else
-                    foreach (var r in loadedRules)
+                    foreach (var r in loadedEntities)
                         entitites.Add(r);
-            } while (entitites.Count % take == 0);
+
+                skip += loadedEntities.Count;
+            } while (loadedEntities.Count != 0 && loadedEntities.Count % take == 0);
 
             return entitites;
         }
