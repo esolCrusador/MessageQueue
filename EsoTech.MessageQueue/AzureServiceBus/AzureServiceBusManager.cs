@@ -123,7 +123,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                         entitites.Add(r);
 
                 skip += loadedEntities.Count;
-            } while (loadedEntities.Count != 0 && loadedEntities.Count % take == 0);
+            } while (loadedEntities.Count == take);
 
             return entitites;
         }
