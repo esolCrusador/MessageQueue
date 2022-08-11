@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Azure.Messaging.ServiceBus;
 using EsoTech.MessageQueue.Abstractions;
 using EsoTech.MessageQueue.AzureServiceBus;
+using EsoTech.MessageQueue.Serialization;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using OpenTracing;

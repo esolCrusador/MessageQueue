@@ -2,6 +2,7 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using EsoTech.MessageQueue.AzureServiceBus;
 using System;
+using EsoTech.MessageQueue.Serialization;
 
 namespace EsoTech.MessageQueue
 {

@@ -17,6 +17,7 @@ using System.Reactive;
 using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
 using System.Linq.Expressions;
+using EsoTech.MessageQueue.Serialization;
 
 namespace EsoTech.MessageQueue.AzureServiceBus
 {
