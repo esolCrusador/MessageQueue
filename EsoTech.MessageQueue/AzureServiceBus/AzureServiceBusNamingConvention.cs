@@ -53,8 +53,11 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             string prefix = Truncate(mt.Name, maxLength);
             if (prefix.Contains('`'))
             {
+                // For example GG`2[System.String,System.Collections.Generic.List`1[System.String]] 
                 prefix = mt.ToString();
+                // Removing "[", "]", namespaces
                 prefix = _notNeeded.Replace(prefix, string.Empty);
+                // Replacing "`2", "," with "-"
                 prefix = _toReplace.Replace(prefix, "-");
                 prefix = Truncate(prefix, maxLength);
             }
