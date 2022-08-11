@@ -1,10 +1,14 @@
 ﻿using System;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace EsoTech.MessageQueue.AzureServiceBus
 {
     public class AzureServiceBusNamingConvention
     {
+        private readonly Regex _notNeeded = new Regex("(\\w+\\.)|\\[|\\]", RegexOptions.Compiled);
+        private readonly Regex _toReplace = new Regex("(`\\d+)|,", RegexOptions.Compiled);
+
         public string GetSubscriptionName(Type messageType, Type handlerType)
         {
             return $"{GetTopicName(messageType)}_{GetServiceName(handlerType)}";
@@ -47,12 +51,12 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         private string GetTypeNamePrefix(Type mt, int maxLength)
         {
             string prefix = Truncate(mt.Name, maxLength);
-            Type genericArgumentType = mt;
-            int tildaIndex;
-            while ((tildaIndex = prefix.LastIndexOf('`')) != -1)
+            if (prefix.Contains('`'))
             {
-                genericArgumentType = genericArgumentType.GetGenericArguments()[0];
-                prefix = Truncate($"{prefix.Substring(0, tildaIndex)}-{genericArgumentType.Name}", maxLength);
+                prefix = mt.ToString();
+                prefix = _notNeeded.Replace(prefix, string.Empty);
+                prefix = _toReplace.Replace(prefix, "-");
+                prefix = Truncate(prefix, maxLength);
             }
 
             return prefix;
