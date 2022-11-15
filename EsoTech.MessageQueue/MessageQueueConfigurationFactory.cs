@@ -44,16 +44,7 @@ namespace EsoTech.MessageQueue
                 serviceName = _httpContextAccessor?.HttpContext?.RequestServices?.GetService<IHostEnvironment>()?.ApplicationName ??
                               callingAssembly?.GetName().Name?.Split('.').Skip(1).First();
 
-            var connectionString = _configuration.GetConnectionString(connectionStringName) ?? connectionStringName;
-            AzureServiceBusConfiguration serviceBusConfiguration;
-            try
-            {
-                serviceBusConfiguration = new AzureServiceBusConfiguration(connectionString);
-            }
-            catch (FormatException ex)
-            {
-                throw new FormatException($"Could not parse connection string {connectionString}", ex);
-            }
+            var serviceBusConfiguration = new AzureServiceBusConfiguration(_configuration.GetConnectionString(connectionStringName) ?? connectionStringName);
             updateConfiguration(serviceBusConfiguration);
 
             return new MessageQueueConfiguration(
