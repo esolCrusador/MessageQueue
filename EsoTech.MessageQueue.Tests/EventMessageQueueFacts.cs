@@ -60,11 +60,11 @@ namespace EsoTech.MessageQueue.Tests
             {
             }
 
-            [Fact]
-            public async Task PuregeAll_Should_Clean_Up_Topics()
-            {
-                await _azureServiceBusManager.PurgeAll();
-            }
+            //[Fact]
+            //public async Task PuregeAll_Should_Clean_Up_Topics()
+            //{
+            //    await _azureServiceBusManager.PurgeAll();
+            //}
         }
 
         protected EventMessageQueueFacts(IServiceProvider serviceProvider)

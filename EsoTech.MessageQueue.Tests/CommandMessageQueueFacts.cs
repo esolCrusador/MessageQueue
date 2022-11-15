@@ -59,11 +59,11 @@ namespace EsoTech.MessageQueue.Tests
             {
             }
 
-            [Fact]
-            public async Task PuregeAll_Should_Clean_Up_Queues()
-            {
-                await _azureServiceBusManager.PurgeAll();
-            }
+            //[Fact]
+            //public async Task PuregeAll_Should_Clean_Up_Queues()
+            //{
+            //    await _azureServiceBusManager.PurgeAll();
+            //}
         }
 
         protected CommandMessageQueueFacts(IServiceProvider serviceProvider)
