@@ -61,7 +61,7 @@ namespace EsoTech.MessageQueue.Tests
 
             [Fact]
             [Trait("Category", "Integration")]
-            public async Task PuregeAll_Should_Clean_Up_Queues()
+            public async Task PurgeAll_Should_Clean_Up_Queues()
             {
                 await (_azureServiceBusManager ?? throw new Exception("No manager")).PurgeAll();
             }
