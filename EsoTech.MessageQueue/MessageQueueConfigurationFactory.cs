@@ -45,9 +45,10 @@ namespace EsoTech.MessageQueue
                               callingAssembly?.GetName().Name?.Split('.').Skip(1).First();
 
             var connectionString = _configuration.GetConnectionString(connectionStringName) ?? connectionStringName;
+            AzureServiceBusConfiguration serviceBusConfiguration;
             try
             {
-                var serviceBusConfiguration = new AzureServiceBusConfiguration(connectionString);
+                serviceBusConfiguration = new AzureServiceBusConfiguration(connectionString);
             }
             catch (FormatException ex)
             {
