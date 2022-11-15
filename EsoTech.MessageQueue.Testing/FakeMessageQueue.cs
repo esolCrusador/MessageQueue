@@ -190,5 +190,13 @@ namespace EsoTech.MessageQueue.Testing
             Messages.Add(msg);
             return Task.CompletedTask;
         }
+
+        public Task SendEvents(IEnumerable<object> eventMessages)
+        {
+            foreach (var msg in eventMessages)
+                Messages.Add(msg);
+
+            return Task.CompletedTask;
+        }
     }
 }

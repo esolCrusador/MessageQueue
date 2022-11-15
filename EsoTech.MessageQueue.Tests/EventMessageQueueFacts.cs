@@ -11,6 +11,7 @@ using EsoTech.MessageQueue.Tests.Messages;
 using System.Threading;
 using EsoTech.MessageQueue.Tests.EventHandlers;
 using EsoTech.MessageQueue.AzureServiceBus;
+using System.Collections.Generic;
 
 namespace EsoTech.MessageQueue.Tests
 {
@@ -130,6 +131,21 @@ namespace EsoTech.MessageQueue.Tests
             await _subscriber.HandleNext();
 
             _fooHandler.Log.Single().Text.Should().Be(msg.Text);
+        }
+
+        [Fact]
+        public async Task HandleNext_Should_Invoke_Appropriate_Handler_For_Multiple()
+        {
+            var msg1 = new FooMsg { Text = "some text 1" };
+            var msg2 = new FooMsg { Text = "some text 2" };
+
+            await _queue.SendEvents(new List<FooMsg> { msg1, msg2 });
+            await _subscriber.HandleNext();
+            await _subscriber.HandleNext();
+
+            _fooHandler.Log.Should().HaveCount(2);
+            _fooHandler.Log.Should().ContainEquivalentOf(msg1);
+            _fooHandler.Log.Should().ContainEquivalentOf(msg2);
         }
 
         [Fact]
