@@ -34,12 +34,7 @@ namespace EsoTech.MessageQueue.Testing
                     var interfaces = type.GetInterfaces()
                         .Where(t => t.Name == $"{nameof(IEventMessageHandler)}`1");
 
-                    return interfaces.Select(i => new HandlerMetadata
-                    {
-                        TargetType = i.GenericTypeArguments[0],
-                        InterfaceType = i,
-                        Instance = h
-                    });
+                    return interfaces.Select(i => new HandlerMetadata(i.GenericTypeArguments[0], i, h));
                 });
             var commandHandlers = _commandHandleSources.SelectMany(h =>
             {
@@ -47,14 +42,9 @@ namespace EsoTech.MessageQueue.Testing
                 var interfaces = type.GetInterfaces()
                     .Where(t => t.Name == $"{nameof(ICommandMessageHandler)}`1");
 
-                return interfaces.Select(i => new HandlerMetadata
-                {
-                    TargetType = i.GenericTypeArguments[0],
-                    InterfaceType = i,
-                    Instance = h
-                });
+                return interfaces.Select(i => new HandlerMetadata(i.GenericTypeArguments[0], i, h));
             });
-            
+
             return commandHandlers.Concat(eventHandlers)
                 .ToLookup(
                     h => h.TargetType,
@@ -66,9 +56,16 @@ namespace EsoTech.MessageQueue.Testing
 
         private class HandlerMetadata
         {
-            public Type TargetType { get; set; }
-            public Type InterfaceType { get; set; }
-            public object Instance { get; set; }
+            public Type TargetType { get; }
+            public Type InterfaceType { get; }
+            public object Instance { get; }
+
+            public HandlerMetadata(Type targetType, Type interfaceType, object instance)
+            {
+                TargetType = targetType;
+                InterfaceType = interfaceType;
+                Instance = instance;
+            }
         }
 
         internal void AddEventHandlers(IEnumerable<IEventMessageHandler> handlers)
@@ -96,7 +93,7 @@ namespace EsoTech.MessageQueue.Testing
         }
 
         public void RemoveEventHandler<THandler>()
-            where THandler: IEventMessageHandler
+            where THandler : IEventMessageHandler
         {
             var handlerType = typeof(THandler);
             _eventHandlerSources = _eventHandlerSources.Where(x => x.GetType() != handlerType).ToList();
@@ -188,6 +185,14 @@ namespace EsoTech.MessageQueue.Testing
         private Task Send(object msg)
         {
             Messages.Add(msg);
+            return Task.CompletedTask;
+        }
+
+        public Task SendEvents(IEnumerable<object> eventMessages)
+        {
+            foreach (var msg in eventMessages)
+                Messages.Add(msg);
+
             return Task.CompletedTask;
         }
     }

@@ -41,10 +41,10 @@ namespace EsoTech.MessageQueue.Tests
             }
         }
 
-        [Trait("Category", "Integration")]
-        public sealed class Integration : CommandMessageQueueFacts
+        [Trait("Category", "Slow")]
+        public sealed class Slow : CommandMessageQueueFacts
         {
-            public Integration() : base(new ServiceCollection()
+            public Slow() : base(new ServiceCollection()
                 .AddLogging()
                 .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddEnvironmentVariables().Build())
                 .AddCommandMessageHandler<FooCommandHandler>()
@@ -60,9 +60,10 @@ namespace EsoTech.MessageQueue.Tests
             }
 
             [Fact]
-            public async Task PuregeAll_Should_Clean_Up_Queues()
+            [Trait("Category", "Integration")]
+            public async Task PurgeAll_Should_Clean_Up_Queues()
             {
-                await _azureServiceBusManager.PurgeAll();
+                await (_azureServiceBusManager ?? throw new Exception("No manager")).PurgeAll();
             }
         }
 
@@ -109,7 +110,7 @@ namespace EsoTech.MessageQueue.Tests
         private readonly MultiCommandHandler1 _handler1;
 
         private readonly MultiCommandHandler2 _handler2;
-        private readonly AzureServiceBusManager _azureServiceBusManager;
+        private readonly AzureServiceBusManager? _azureServiceBusManager;
 
         [Fact]
         public async Task Send_Should_Not_Invoke_Handlers()
@@ -144,7 +145,8 @@ namespace EsoTech.MessageQueue.Tests
             await _queue.SendCommand(enveloped);
             await _subscriber.HandleNext();
 
-            _envelopedFooHandler.Log.Single().Payload.Text.Should().Be(msg.Text);
+            var payloadText = _envelopedFooHandler.Log.Single().Payload?.Text ?? throw new InvalidOperationException();
+            payloadText.Should().Be(msg.Text);
         }
 
         [Fact]

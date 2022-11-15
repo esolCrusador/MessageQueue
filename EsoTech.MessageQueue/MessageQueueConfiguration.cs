@@ -5,7 +5,7 @@ namespace EsoTech.MessageQueue
     internal class MessageQueueConfiguration
     {
         public string ClientId { get; }
-        public string ServiceName { get; }
+        public string? ServiceName { get; }
         public int AckTimeoutMilliseconds { get; }
         public bool HandleRealtime { get; }
         public int MaxRedeliveryCount { get; }
@@ -13,7 +13,7 @@ namespace EsoTech.MessageQueue
         public AzureServiceBusConfiguration AzureServiceBusConfiguration { get; }
 
         public MessageQueueConfiguration(string clientId,
-            string serviceName,
+            string? serviceName,
             int ackTimeoutMilliseconds,
             bool handleRealtime,
             int maxRedeliveryCount,

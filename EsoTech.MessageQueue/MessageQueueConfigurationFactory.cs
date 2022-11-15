@@ -13,10 +13,10 @@ namespace EsoTech.MessageQueue
     internal class MessageQueueConfigurationFactory
     {
         private readonly IConfiguration _configuration;
-        private readonly IHttpContextAccessor _httpContextAccessor;
-        private readonly ContinuousPollingSuppressor _continuousPollingSuppressor;
+        private readonly IHttpContextAccessor? _httpContextAccessor;
+        private readonly ContinuousPollingSuppressor? _continuousPollingSuppressor;
 
-        public MessageQueueConfigurationFactory(IConfiguration configuration, IHttpContextAccessor httpContextAccessor, ContinuousPollingSuppressor continuousPollingSuppressor)
+        public MessageQueueConfigurationFactory(IConfiguration configuration, IHttpContextAccessor? httpContextAccessor, ContinuousPollingSuppressor? continuousPollingSuppressor)
         {
             _configuration = configuration;
             _httpContextAccessor = httpContextAccessor;
@@ -38,11 +38,12 @@ namespace EsoTech.MessageQueue
         {
         }
 
-        public MessageQueueConfiguration Create(string connectionStringName, string clientId, int ackTimeoutMilliseconds, string serviceName, int maxRedeliveryCount, int maxConcurrentMessages, Action<AzureServiceBusConfiguration> updateConfiguration)
+        public MessageQueueConfiguration Create(Assembly callingAssembly, string connectionStringName, string? clientId, int ackTimeoutMilliseconds, string? serviceName, int maxRedeliveryCount, int maxConcurrentMessages, Action<AzureServiceBusConfiguration> updateConfiguration)
         {
             if (serviceName == null)
                 serviceName = _httpContextAccessor?.HttpContext?.RequestServices?.GetService<IHostEnvironment>()?.ApplicationName ??
-                              Assembly.GetEntryAssembly()?.GetName().Name?.Split('.').Skip(1).First();
+                              callingAssembly?.GetName().Name?.Split('.').Skip(1).First()
+                              ?? throw new ArgumentException("Could not identify service name");
 
             var serviceBusConfiguration = new AzureServiceBusConfiguration(_configuration.GetConnectionString(connectionStringName) ?? connectionStringName);
             updateConfiguration(serviceBusConfiguration);

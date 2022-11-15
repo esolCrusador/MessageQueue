@@ -2,6 +2,6 @@
 {
     class Envelope<T>
     {
-        public T Payload { get; set; }
+        public T? Payload { get; set; }
     }
 }

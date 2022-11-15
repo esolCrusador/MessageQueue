@@ -42,10 +42,10 @@ namespace EsoTech.MessageQueue.Serialization
                 DeliveryTime.Observe(timeSpan.TotalMilliseconds);
             }
 
-            return deserialized;
+            return deserialized ?? throw new ArgumentException("Could not deserialize", nameof(bytes));
         }
 
-        public bool TryDeserialize(ReadOnlySpan<byte> bytes, out Message msg)
+        public bool TryDeserialize(ReadOnlySpan<byte> bytes, out Message? msg)
         {
             try
             {

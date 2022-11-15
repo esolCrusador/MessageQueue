@@ -51,7 +51,7 @@ namespace EsoTech.MessageQueue.Serialization
 
         public override void Write(Utf8JsonWriter writer, Message value, JsonSerializerOptions options)
         {
-            value.PayloadTypeName = value.Payload.GetType().AssemblyQualifiedName;
+            value.PayloadTypeName = value.Payload?.GetType().AssemblyQualifiedName;
             JsonSerializer.Serialize(writer, value);
         }
 

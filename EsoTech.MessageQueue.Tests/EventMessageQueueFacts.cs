@@ -11,6 +11,7 @@ using EsoTech.MessageQueue.Tests.Messages;
 using System.Threading;
 using EsoTech.MessageQueue.Tests.EventHandlers;
 using EsoTech.MessageQueue.AzureServiceBus;
+using System.Collections.Generic;
 
 namespace EsoTech.MessageQueue.Tests
 {
@@ -41,10 +42,10 @@ namespace EsoTech.MessageQueue.Tests
             }
         }
 
-        [Trait("Category", "Integration")]
-        public sealed class Integration : EventMessageQueueFacts
+        [Trait("Category", "Slow")]
+        public sealed class Slow : EventMessageQueueFacts
         {
-            public Integration() : base(new ServiceCollection()
+            public Slow() : base(new ServiceCollection()
                 .AddLogging()
                 .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddEnvironmentVariables().Build())
                 .AddEventMessageHandler<FooEventHandler>()
@@ -60,9 +61,10 @@ namespace EsoTech.MessageQueue.Tests
             }
 
             [Fact]
-            public async Task PuregeAll_Should_Clean_Up_Topics()
+            [Trait("Category", "Integration")]
+            public async Task PurgeAll_Should_Clean_Up_Topics()
             {
-                await _azureServiceBusManager.PurgeAll();
+                await (_azureServiceBusManager ?? throw new Exception("No manager")).PurgeAll();
             }
         }
 
@@ -109,7 +111,7 @@ namespace EsoTech.MessageQueue.Tests
         private readonly MultiEventHandler1 _handler1;
 
         private readonly MultiEventHandler2 _handler2;
-        private readonly AzureServiceBusManager _azureServiceBusManager;
+        private readonly AzureServiceBusManager? _azureServiceBusManager;
 
         [Fact]
         public async Task Send_Should_Not_Invoke_Handlers()
@@ -133,6 +135,21 @@ namespace EsoTech.MessageQueue.Tests
         }
 
         [Fact]
+        public async Task HandleNext_Should_Invoke_Appropriate_Handler_For_Multiple()
+        {
+            var msg1 = new FooMsg { Text = "some text 1" };
+            var msg2 = new FooMsg { Text = "some text 2" };
+
+            await _queue.SendEvents(new List<FooMsg> { msg1, msg2 });
+            await _subscriber.HandleNext();
+            await _subscriber.HandleNext();
+
+            _fooHandler.Log.Should().HaveCount(2);
+            _fooHandler.Log.Should().ContainEquivalentOf(msg1);
+            _fooHandler.Log.Should().ContainEquivalentOf(msg2);
+        }
+
+        [Fact]
         public async Task HandleNext_Should_Invoke_Appropriate_Handler_For_Enveloped_Messages()
         {
             var msg = new FooMsg { Text = "some text" };
@@ -144,7 +161,8 @@ namespace EsoTech.MessageQueue.Tests
             await _queue.SendEvent(enveloped);
             await _subscriber.HandleNext();
 
-            _envelopedFooHandler.Log.Single().Payload.Text.Should().Be(msg.Text);
+            string payloadText = _envelopedFooHandler.Log.Single().Payload?.Text ?? throw new InvalidOperationException();
+            payloadText.Should().Be(msg.Text);
         }
 
         [Fact]

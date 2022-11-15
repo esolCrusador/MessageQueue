@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Azure.Messaging.ServiceBus;
@@ -57,6 +59,21 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             await Send(sender, eventMessage);
         }
 
+        public async Task SendEvents(IEnumerable<object> eventMessages)
+        {
+            var topics = eventMessages.GroupBy(m => _namingConvention.GetTopicName(m.GetType()));
+            foreach (var topicMessages in topics)
+            {
+                var sender = await _sendersByTopic.GetOrAdd(topicMessages.Key, async topickName =>
+                {
+                    await _azureServiceBusManager.UpdateTopic(topickName);
+                    return _serviceBusClient.CreateSender(topickName);
+                });
+
+                await Send(sender, topicMessages);
+            }
+        }
+
         public async Task SendCommand(object commandMessage)
         {
             var sender = await _sendersByTopic.GetOrAdd(_namingConvention.GetQueueName(commandMessage.GetType()), async queueName =>
@@ -77,15 +94,43 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 
         private async Task Send(ServiceBusSender sender, object msg)
         {
-            ISpan span = null;
+            try
+            {
+                await sender.SendMessageAsync(CreateMessage(msg));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Send message error: {ex.Message}");
+
+                throw;
+            }
+        }
+
+        public async Task Send(ServiceBusSender sender, IEnumerable<object> eventMessages)
+        {
+            try
+            {
+                await sender.SendMessagesAsync(eventMessages.Select(m => CreateMessage(m)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Send message error: {ex.Message}");
+
+                throw;
+            }
+        }
+
+        private ServiceBusMessage CreateMessage(object eventMessage)
+        {
+            ISpan? span = null;
 
             try
             {
-                var type = msg.GetType();
+                var type = eventMessage.GetType();
 
                 var wrapped = new Message
                 {
-                    Payload = msg
+                    Payload = eventMessage
                 };
 
                 if (Tracer != null)
@@ -95,31 +140,22 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                         .WithTag(Tags.Component, "MessageQueue")
                         .WithTag(Tags.SpanKind, Tags.SpanKindProducer)
                         .WithTag("mq.message_name", type.Name)
-                        .WithTag("mq.message", JsonConvert.SerializeObject(msg))
+                        .WithTag("mq.message", JsonConvert.SerializeObject(eventMessage))
                         .Start();
 
-                    Tracer.Inject(span.Context, BuiltinFormats.TextMap,
-                        new TextMapInjectAdapter(wrapped.Headers));
+                    Tracer.Inject(span.Context, BuiltinFormats.TextMap, new TextMapInjectAdapter(wrapped.Headers));
                 }
 
                 var bytes = _messageSerializer.Serialize(wrapped);
 
-                var message = new ServiceBusMessage(bytes)
+                return new ServiceBusMessage(bytes)
                 {
                     ApplicationProperties =
                     {
                         // Warning: subscription filters use this property, don't change.
-                        ["EsoTechMessageKind"] = _namingConvention.GetSubscriptionFilterValue(msg.GetType())
+                        ["EsoTechMessageKind"] = _namingConvention.GetSubscriptionFilterValue(eventMessage.GetType())
                     }
                 };
-
-                await sender.SendMessageAsync(message);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Send message error: {ex.Message}");
-                
-                throw;
             }
             finally
             {

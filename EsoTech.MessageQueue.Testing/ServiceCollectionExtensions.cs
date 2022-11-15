@@ -6,7 +6,7 @@ namespace EsoTech.MessageQueue.Testing
 {
     public static class ServiceCollectionExtensions
     {
-        public static FakeMessageQueue AddFakeMessageQueue(this IServiceCollection services, FakeMessageQueue fakeMessageQueue = null, bool pullAutomatically = false)
+        public static FakeMessageQueue AddFakeMessageQueue(this IServiceCollection services, FakeMessageQueue? fakeMessageQueue = null, bool pullAutomatically = false)
         {
             fakeMessageQueue ??= new FakeMessageQueue();
             services.AddSingleton(s => fakeMessageQueue);
