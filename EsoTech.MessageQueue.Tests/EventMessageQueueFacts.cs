@@ -42,10 +42,10 @@ namespace EsoTech.MessageQueue.Tests
             }
         }
 
-        [Trait("Category", "Integration")]
-        public sealed class Integration : EventMessageQueueFacts
+        [Trait("Category", "Slow")]
+        public sealed class Slow : EventMessageQueueFacts
         {
-            public Integration() : base(new ServiceCollection()
+            public Slow() : base(new ServiceCollection()
                 .AddLogging()
                 .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddEnvironmentVariables().Build())
                 .AddEventMessageHandler<FooEventHandler>()
@@ -60,11 +60,12 @@ namespace EsoTech.MessageQueue.Tests
             {
             }
 
-            //[Fact]
-            //public async Task PuregeAll_Should_Clean_Up_Topics()
-            //{
-            //    await _azureServiceBusManager.PurgeAll();
-            //}
+            [Fact]
+            [Trait("Category", "Integration")]
+            public async Task PuregeAll_Should_Clean_Up_Topics()
+            {
+                await (_azureServiceBusManager ?? throw new Exception("No manager")).PurgeAll();
+            }
         }
 
         protected EventMessageQueueFacts(IServiceProvider serviceProvider)
@@ -110,7 +111,7 @@ namespace EsoTech.MessageQueue.Tests
         private readonly MultiEventHandler1 _handler1;
 
         private readonly MultiEventHandler2 _handler2;
-        private readonly AzureServiceBusManager _azureServiceBusManager;
+        private readonly AzureServiceBusManager? _azureServiceBusManager;
 
         [Fact]
         public async Task Send_Should_Not_Invoke_Handlers()
@@ -160,7 +161,8 @@ namespace EsoTech.MessageQueue.Tests
             await _queue.SendEvent(enveloped);
             await _subscriber.HandleNext();
 
-            _envelopedFooHandler.Log.Single().Payload.Text.Should().Be(msg.Text);
+            string payloadText = _envelopedFooHandler.Log.Single().Payload?.Text ?? throw new InvalidOperationException();
+            payloadText.Should().Be(msg.Text);
         }
 
         [Fact]

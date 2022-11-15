@@ -122,7 +122,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 
         private ServiceBusMessage CreateMessage(object eventMessage)
         {
-            ISpan span = null;
+            ISpan? span = null;
 
             try
             {

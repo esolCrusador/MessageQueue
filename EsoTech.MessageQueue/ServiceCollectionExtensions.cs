@@ -13,11 +13,11 @@ namespace EsoTech.MessageQueue
         public static IServiceCollection AddMessageQueue(this IServiceCollection self, 
             string connectionStringName,
             int ackTimeoutMilliseconds = 30000,
-            string clientId = default,
-            string serviceName = default,
+            string? clientId = default,
+            string? serviceName = default,
             int maxRedeliveryCount = -1,
             int maxConcurrentMessages = 100,
-            Action<AzureServiceBusConfiguration> updateConfiguration = null
+            Action<AzureServiceBusConfiguration>? updateConfiguration = null
         )
         {
             var callingAssembly = Assembly.GetCallingAssembly();

@@ -37,19 +37,19 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         {
             get
             {
-                if (_messageQueueConfiguration.HandleRealtime)
+                if (_messageQueueConfiguration.HandleRealtime || _waitBeforeHandle == null)
                     return Task.CompletedTask;
 
                 return _waitBeforeHandle.Take(1).ToTask();
             }
         }
 
-        private IObservable<Unit> _waitBeforeHandle;
-        private Subject<Unit> _handleNext;
+        private IObservable<Unit>? _waitBeforeHandle;
+        private Subject<Unit>? _handleNext;
 
         private readonly IEnumerable<IEventMessageHandler> _eventHandlers;
         private readonly IEnumerable<ICommandMessageHandler> _commandHandlers;
-        private readonly TracerFactory _tracerFactory;
+        private readonly TracerFactory? _tracerFactory;
         private readonly MessageQueueConfiguration _messageQueueConfiguration;
         private readonly ServiceBusClient _serviceBusClient;
         private readonly AzureServiceBusNamingConvention _namingConvention;
@@ -57,16 +57,16 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         private readonly AzureServiceBusManager _azureServiceBusManager;
         private readonly ILogger<AzureServiceBusConsumer> _logger;
 
-        private ILookup<Guid, HandlerByMessageTypeEntry> _handlersByMessageType;
-        private IList<ServiceBusProcessor> _processors;
+        private ILookup<Guid, HandlerByMessageTypeEntry>? _handlersByMessageType;
+        private IList<ServiceBusProcessor>? _processors;
         private bool _initialized = false;
 
-        private ITracer Tracer => _tracerFactory?.Tracer;
+        private ITracer? Tracer => _tracerFactory?.Tracer;
 
         public AzureServiceBusConsumer(
             IEnumerable<IEventMessageHandler> eventHandlers,
             IEnumerable<ICommandMessageHandler> commandHandlers,
-            TracerFactory tracerFactory,
+            TracerFactory? tracerFactory,
             MessageQueueConfiguration messageQueueConfiguration,
             AzureServiceBusNamingConvention namingConvention,
             AzureServiceBusClientHolder serviceBusClientHolder,
@@ -167,7 +167,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 
         public async Task<bool> TryHandleNext(CancellationToken cancellationToken = default)
         {
-            CancellationTokenSource cancellationTokenSource = null;
+            CancellationTokenSource? cancellationTokenSource = null;
             if (cancellationToken == default)
             {
                 cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -287,13 +287,15 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                 return;
             }
 
-            var payloadType = message.Payload.GetType();
+            var payloadType = (message?.Payload ?? throw new ArgumentException("No payload")).GetType();
             var eventName = payloadType.Name;
             var topicName = _namingConvention.GetTopicName(payloadType);
 
             try
             {
-                var handlers = _handlersByMessageType[payloadType.GUID].ToList();
+                var handlersByMessageType = _handlersByMessageType 
+                    ?? throw new ArgumentException("Was not initialized", nameof(_handlersByMessageType));
+                var handlers = handlersByMessageType[payloadType.GUID].ToList();
                 if (handlers.Count == 0)
                 {
                     _logger.LogError("Processed message with no handlers, subscription filters are not set up properly: {Sequence}, {PayloadType}, {MessageBody}.",

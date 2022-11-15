@@ -7,15 +7,15 @@ namespace EsoTech.MessageQueue
 {
     public class TracerFactory
     {
-        private readonly IHttpContextAccessor _httpContextAccessor;
-        private readonly ITracer _tracer;
+        private readonly IHttpContextAccessor? _httpContextAccessor;
+        private readonly ITracer? _tracer;
 
         public ITracer Tracer =>
             _httpContextAccessor?.HttpContext?.RequestServices?.GetService<ITracer>() ??
             _tracer ??
             NoopTracerFactory.Create();
 
-        public TracerFactory(IHttpContextAccessor httpContextAccessor, ITracer tracer)
+        public TracerFactory(IHttpContextAccessor? httpContextAccessor, ITracer? tracer)
         {
             _httpContextAccessor = httpContextAccessor;
             _tracer = tracer;

@@ -12,7 +12,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 {
     public class AzureServiceBusManager
     {
-        private ManagementClient _client;
+        private ManagementClient? _client;
         private readonly AzureServiceBusConfiguration _configuration;
         private readonly AzureServiceBusNamingConvention _namingConvention;
         private readonly ILogger _logger;
@@ -111,7 +111,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             int skip = 0;
             const int take = 100;
 
-            IList<TEntity> entitites = null;
+            IList<TEntity>? entitites = null;
             IList<TEntity> loadedEntities;
             do
             {
