@@ -38,4 +38,4 @@ steps:
     runInParallel: false
     platform: '$(buildPlatform)'
     configuration: '$(buildConfiguration)'
-    testFiltercriteria: 'TestCategory=Fast&TestCategory=Slow'
+    testFiltercriteria: 'TestCategory=Fast|TestCategory=Slow'
