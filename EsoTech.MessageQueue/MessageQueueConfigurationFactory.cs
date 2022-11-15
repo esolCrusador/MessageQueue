@@ -38,11 +38,11 @@ namespace EsoTech.MessageQueue
         {
         }
 
-        public MessageQueueConfiguration Create(string connectionStringName, string clientId, int ackTimeoutMilliseconds, string serviceName, int maxRedeliveryCount, int maxConcurrentMessages, Action<AzureServiceBusConfiguration> updateConfiguration)
+        public MessageQueueConfiguration Create(Assembly callingAssembly, string connectionStringName, string clientId, int ackTimeoutMilliseconds, string serviceName, int maxRedeliveryCount, int maxConcurrentMessages, Action<AzureServiceBusConfiguration> updateConfiguration)
         {
             if (serviceName == null)
                 serviceName = _httpContextAccessor?.HttpContext?.RequestServices?.GetService<IHostEnvironment>()?.ApplicationName ??
-                              Assembly.GetEntryAssembly()?.GetName().Name?.Split('.').Skip(1).First();
+                              callingAssembly?.GetName().Name?.Split('.').Skip(1).First();
 
             var serviceBusConfiguration = new AzureServiceBusConfiguration(_configuration.GetConnectionString(connectionStringName) ?? connectionStringName);
             updateConfiguration(serviceBusConfiguration);

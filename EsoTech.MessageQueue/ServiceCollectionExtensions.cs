@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using EsoTech.MessageQueue.AzureServiceBus;
 using System;
 using EsoTech.MessageQueue.Serialization;
+using System.Reflection;
 
 namespace EsoTech.MessageQueue
 {
@@ -19,13 +20,14 @@ namespace EsoTech.MessageQueue
             Action<AzureServiceBusConfiguration> updateConfiguration = null
         )
         {
+            var callingAssembly = Assembly.GetCallingAssembly();
             self.TryAddSingleton<TracerFactory>();
             self.TryAddSingleton<MessageQueueConfigurationFactory>();
             self.TryAddSingleton<MessageSerializer>();
             self.TryAddSingleton(s =>
             {
                 var factory = s.GetRequiredService<MessageQueueConfigurationFactory>();
-                return factory.Create(connectionStringName, clientId, ackTimeoutMilliseconds, serviceName, maxRedeliveryCount, maxConcurrentMessages, updateConfiguration ?? update);
+                return factory.Create(callingAssembly, connectionStringName, clientId, ackTimeoutMilliseconds, serviceName, maxRedeliveryCount, maxConcurrentMessages, updateConfiguration ?? update);
             });
 
             self.AddAzureServiceBusMessageQueue();
