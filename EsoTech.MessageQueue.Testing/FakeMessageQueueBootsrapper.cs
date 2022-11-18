@@ -4,7 +4,7 @@ using System;
 
 namespace EsoTech.MessageQueue.Testing
 {
-    public static class ServiceCollectionExtensions
+    public static class FakeMessageQueueBootsrapper
     {
         public static FakeMessageQueue AddFakeMessageQueue(this IServiceCollection services, FakeMessageQueue? fakeMessageQueue = null, bool pullAutomatically = false)
         {
