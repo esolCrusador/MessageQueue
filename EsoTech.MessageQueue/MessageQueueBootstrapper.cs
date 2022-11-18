@@ -7,7 +7,7 @@ using System.Reflection;
 
 namespace EsoTech.MessageQueue
 {
-    public static class ServiceCollectionExtensions
+    public static class MessageQueueBootstrapper
     {
         private static Action<AzureServiceBusConfiguration> update = _ => { };
         public static IServiceCollection AddMessageQueue(this IServiceCollection self, 
