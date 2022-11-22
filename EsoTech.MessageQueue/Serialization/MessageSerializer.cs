@@ -1,12 +1,11 @@
 ﻿using System;
-using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Prometheus;
 
 namespace EsoTech.MessageQueue.Serialization
 {
-    internal class MessageSerializer
+    public class MessageSerializer
     {
         private readonly ILogger<MessageSerializer> _logger;
 

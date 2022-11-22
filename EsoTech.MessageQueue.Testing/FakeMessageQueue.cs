@@ -1,7 +1,6 @@
 using EsoTech.MessageQueue.Abstractions;
 using FluentAssertions;
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -12,11 +11,10 @@ namespace EsoTech.MessageQueue.Testing
     public sealed class FakeMessageQueue : IMessageQueue, IMessageConsumer
     {
         private ILookup<Type, Func<object, CancellationToken, Task>> _handlers;
-
         private IEnumerable<IEventMessageHandler> _eventHandlerSources;
         private IEnumerable<ICommandMessageHandler> _commandHandleSources;
 
-        public BlockingCollection<object> Messages { get; } = new BlockingCollection<object>();
+        public MessagesCollection Messages { get; } = new MessagesCollection();
 
         public FakeMessageQueue()
         {
@@ -184,14 +182,14 @@ namespace EsoTech.MessageQueue.Testing
 
         private Task Send(object msg)
         {
-            Messages.Add(msg);
+            Messages.AddMessage(msg);
             return Task.CompletedTask;
         }
 
         public Task SendEvents(IEnumerable<object> eventMessages)
         {
             foreach (var msg in eventMessages)
-                Messages.Add(msg);
+                Messages.AddMessage(msg);
 
             return Task.CompletedTask;
         }

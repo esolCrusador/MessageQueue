@@ -5,10 +5,12 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="FluentAssertions" Version="6.7.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="6.0.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\EsoTech.MessageQueue.Abstractions\EsoTech.MessageQueue.Abstractions.csproj" />
+    <ProjectReference Include="..\EsoTech.MessageQueue\EsoTech.MessageQueue.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

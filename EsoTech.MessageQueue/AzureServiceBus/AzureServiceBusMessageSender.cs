@@ -1,12 +1,10 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Azure.Messaging.ServiceBus;
 using EsoTech.MessageQueue.Abstractions;
-using EsoTech.MessageQueue.AzureServiceBus;
 using EsoTech.MessageQueue.Serialization;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;

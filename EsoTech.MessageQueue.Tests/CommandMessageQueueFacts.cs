@@ -59,12 +59,12 @@ namespace EsoTech.MessageQueue.Tests
             {
             }
 
-            [Fact]
-            [Trait("Category", "Integration")]
-            public async Task PurgeAll_Should_Clean_Up_Queues()
-            {
-                await (_azureServiceBusManager ?? throw new Exception("No manager")).PurgeAll();
-            }
+            //[Fact]
+            //[Trait("Category", "Integration")]
+            //public async Task PurgeAll_Should_Clean_Up_Queues()
+            //{
+            //    await (_azureServiceBusManager ?? throw new Exception("No manager")).PurgeAll();
+            //}
         }
 
         protected CommandMessageQueueFacts(IServiceProvider serviceProvider)
