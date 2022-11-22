@@ -37,20 +37,20 @@ namespace EsoTech.MessageQueue.Testing
 
         public object Take(CancellationToken cancellation)
         {
-            var bytes = _messages.Take(cancellation);
-            return _serializer.Deserialize(bytes);
+            byte[] bytes = _messages.Take(cancellation);
+            return _serializer.Deserialize(bytes).Payload ?? throw new ArgumentException("Null", nameof(Message.Payload));
         }
 
         public object? FirstOrDefault()
         {
             var bytes = _messages.FirstOrDefault();
-            return bytes == null ? null : _serializer.Deserialize(bytes);
+            return bytes == null ? null : _serializer.Deserialize(bytes).Payload;
         }
 
         public bool TryTake(out object? msg)
         {
             bool suceeded = _messages.TryTake(out var bytes);
-            msg = suceeded ? _serializer.Deserialize(bytes) : null;
+            msg = suceeded ? _serializer.Deserialize(bytes).Payload : null;
             return suceeded;
         }
     }
