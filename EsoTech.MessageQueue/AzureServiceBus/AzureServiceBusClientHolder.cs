@@ -1,7 +1,5 @@
 ﻿using Azure.Messaging.ServiceBus;
 using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace EsoTech.MessageQueue.AzureServiceBus
 {

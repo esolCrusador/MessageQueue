@@ -5,7 +5,6 @@ using OpenTracing.Tag;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Azure.Messaging.ServiceBus;
@@ -16,7 +15,6 @@ using System.Reactive.Subjects;
 using System.Reactive;
 using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
-using System.Linq.Expressions;
 using EsoTech.MessageQueue.Serialization;
 
 namespace EsoTech.MessageQueue.AzureServiceBus

@@ -2,7 +2,7 @@
 
 namespace EsoTech.MessageQueue
 {
-    internal class Message
+    public class Message
     {
         public string? PayloadTypeName { get; set; }
         public Dictionary<string, string> Headers { get; set; } = new Dictionary<string, string>();
