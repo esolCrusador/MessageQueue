@@ -13,7 +13,7 @@ namespace EsoTech.MessageQueue.Testing
         {
             cfg.AddConsole();
         }).CreateLogger<MessageSerializer>();
-        
+
         private readonly MessageSerializer _serializer;
         private readonly BlockingCollection<byte[]> _messages;
 

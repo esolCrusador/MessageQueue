@@ -1,21 +1,21 @@
+using Azure.Messaging.ServiceBus;
+using EsoTech.MessageQueue.Abstractions;
+using EsoTech.MessageQueue.Serialization;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using OpenTracing;
 using OpenTracing.Propagation;
 using OpenTracing.Tag;
+using Prometheus;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using Azure.Messaging.ServiceBus;
-using Microsoft.Extensions.Logging;
-using Prometheus;
-using EsoTech.MessageQueue.Abstractions;
-using System.Reactive.Subjects;
 using System.Reactive;
 using System.Reactive.Linq;
+using System.Reactive.Subjects;
 using System.Reactive.Threading.Tasks;
-using EsoTech.MessageQueue.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace EsoTech.MessageQueue.AzureServiceBus
 {
@@ -291,7 +291,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 
             try
             {
-                var handlersByMessageType = _handlersByMessageType 
+                var handlersByMessageType = _handlersByMessageType
                     ?? throw new ArgumentException("Was not initialized", nameof(_handlersByMessageType));
                 var handlers = handlersByMessageType[payloadType.GUID].ToList();
                 if (handlers.Count == 0)

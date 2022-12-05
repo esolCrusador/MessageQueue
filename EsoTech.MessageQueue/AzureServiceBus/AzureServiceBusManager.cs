@@ -70,7 +70,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 
         public async Task UpdateTopic(string topicName)
         {
-            _logger.LogInformation($"Updating topick {topicName}");
+            _logger.LogInformation($"Updating topic {topicName}");
             var stopwatch = new Stopwatch();
             stopwatch.Start();
 
@@ -82,7 +82,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                 });
 
             stopwatch.Stop();
-            _logger.LogInformation($"Topick {topicName} updated for {stopwatch.ElapsedMilliseconds}ms");
+            _logger.LogInformation($"Topic {topicName} updated for {stopwatch.ElapsedMilliseconds}ms");
         }
 
         public async Task UpdateQueue(string queueName)

@@ -1,7 +1,7 @@
-﻿using System;
-using System.Text.Json;
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using Prometheus;
+using System;
+using System.Text.Json;
 
 namespace EsoTech.MessageQueue.Serialization
 {

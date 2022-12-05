@@ -5,7 +5,7 @@ namespace EsoTech.MessageQueue.Abstractions
 {
     public static class ServiceCollectionExtensions
     {
-        public static IServiceCollection AddEventMessageHandler<TEventHandler>(this IServiceCollection self) 
+        public static IServiceCollection AddEventMessageHandler<TEventHandler>(this IServiceCollection self)
             where TEventHandler : class, IEventMessageHandler
         {
             self.AddSingleton<TEventHandler>();
@@ -13,7 +13,7 @@ namespace EsoTech.MessageQueue.Abstractions
             return self;
         }
 
-        public static IServiceCollection TryAddEventMessageHandler<TEventHandler>(this IServiceCollection self) 
+        public static IServiceCollection TryAddEventMessageHandler<TEventHandler>(this IServiceCollection self)
             where TEventHandler : class, IEventMessageHandler
         {
             self.TryAddSingleton<TEventHandler>();
@@ -29,7 +29,7 @@ namespace EsoTech.MessageQueue.Abstractions
             return self;
         }
 
-        public static IServiceCollection TryAddCommandMessageHandler<TCommandHandler>(this IServiceCollection self) 
+        public static IServiceCollection TryAddCommandMessageHandler<TCommandHandler>(this IServiceCollection self)
             where TCommandHandler : class, ICommandMessageHandler
         {
             self.TryAddSingleton<TCommandHandler>();
