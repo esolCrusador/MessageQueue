@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using OpenTracing;
 using OpenTracing.Noop;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace EsoTech.MessageQueue
 {

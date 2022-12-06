@@ -1,8 +1,8 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using EsoTech.MessageQueue.AzureServiceBus;
-using System;
+﻿using EsoTech.MessageQueue.AzureServiceBus;
 using EsoTech.MessageQueue.Serialization;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using System;
 using System.Reflection;
 
 namespace EsoTech.MessageQueue
@@ -10,7 +10,7 @@ namespace EsoTech.MessageQueue
     public static class MessageQueueBootstrapper
     {
         private static Action<AzureServiceBusConfiguration> update = _ => { };
-        public static IServiceCollection AddMessageQueue(this IServiceCollection self, 
+        public static IServiceCollection AddMessageQueue(this IServiceCollection self,
             string connectionStringName,
             int ackTimeoutMilliseconds = 30000,
             string? clientId = default,

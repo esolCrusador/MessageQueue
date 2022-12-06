@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Azure.Messaging.ServiceBus;
+﻿using Azure.Messaging.ServiceBus;
 using EsoTech.MessageQueue.Abstractions;
 using EsoTech.MessageQueue.Serialization;
 using Microsoft.Extensions.Logging;
@@ -11,6 +6,11 @@ using Newtonsoft.Json;
 using OpenTracing;
 using OpenTracing.Propagation;
 using OpenTracing.Tag;
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace EsoTech.MessageQueue.AzureServiceBus
 {

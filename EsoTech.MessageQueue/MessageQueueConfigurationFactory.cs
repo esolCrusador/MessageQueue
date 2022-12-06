@@ -1,12 +1,12 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using EsoTech.MessageQueue.Abstractions;
+using EsoTech.MessageQueue.AzureServiceBus;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System;
-using Microsoft.Extensions.DependencyInjection;
-using System.Reflection;
 using System.Linq;
-using Microsoft.Extensions.Configuration;
-using EsoTech.MessageQueue.Abstractions;
-using EsoTech.MessageQueue.AzureServiceBus;
+using System.Reflection;
 
 namespace EsoTech.MessageQueue
 {
@@ -29,7 +29,7 @@ namespace EsoTech.MessageQueue
         }
 
         public MessageQueueConfigurationFactory(IConfiguration configuration, ContinuousPollingSuppressor continuousPollingSuppressor)
-    :       this(configuration, null, continuousPollingSuppressor)
+    : this(configuration, null, continuousPollingSuppressor)
         {
         }
 

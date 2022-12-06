@@ -1,7 +1,7 @@
-﻿using Microsoft.Extensions.Hosting;
+﻿using EsoTech.MessageQueue.Abstractions;
+using Microsoft.Extensions.Hosting;
 using System.Threading;
 using System.Threading.Tasks;
-using EsoTech.MessageQueue.Abstractions;
 
 namespace EsoTech.MessageQueue
 {
