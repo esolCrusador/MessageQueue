@@ -37,7 +37,8 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                 await Client.CreateSubscriptionAsync(new SubscriptionDescription(topicName, subscriptionName)
                 {
                     MaxDeliveryCount = _configuration.MaxDeliveryCount,
-                    DefaultMessageTimeToLive = _configuration.DefaultMessageTimeToLive
+                    DefaultMessageTimeToLive = _configuration.DefaultMessageTimeToLive,
+                    EnableDeadLetteringOnMessageExpiration = true
                 });
             await UpdateRules(topicName, subscriptionName, messageTypes);
 
@@ -78,7 +79,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                 await Client.CreateTopicAsync(new TopicDescription(topicName)
                 {
                     MaxSizeInMB = _configuration.MaxSizeInMB,
-                    DefaultMessageTimeToLive = _configuration.DefaultMessageTimeToLive
+                    DefaultMessageTimeToLive = _configuration.DefaultMessageTimeToLive,
                 });
 
             stopwatch.Stop();
