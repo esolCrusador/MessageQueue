@@ -26,7 +26,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 
         public string GetSubscriptionFilterValue(Type messageType)
         {
-            return messageType.GUID.ToString("N");
+            return messageType.FullName.GetHashCode().ToString();
         }
 
         public string GetSubscriptionFilterName(Type messageType, int maxLength)
