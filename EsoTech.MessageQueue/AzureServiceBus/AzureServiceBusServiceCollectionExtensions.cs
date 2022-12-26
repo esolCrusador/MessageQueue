@@ -11,6 +11,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         {
             self.TryAddSingleton<AzureServiceBusClientHolder>();
             self.TryAddSingleton<AzureServiceBusNamingConvention>();
+            self.TryAddSingleton<HashFunction>();
             self.TryAddSingleton<IMessageQueue, AzureServiceBusMessageSender>();
             self.TryAddSingleton<IMessageConsumer, AzureServiceBusConsumer>();
             self.TryAddSingleton(s => new AzureServiceBusManager(
