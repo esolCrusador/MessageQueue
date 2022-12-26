@@ -8,6 +8,12 @@ namespace EsoTech.MessageQueue.AzureServiceBus
     {
         private readonly Regex _notNeeded = new Regex("(\\w+\\.)|\\[|\\]", RegexOptions.Compiled);
         private readonly Regex _toReplace = new Regex("(`\\d+)|,", RegexOptions.Compiled);
+        private readonly HashFunction _hashFunction;
+
+        public AzureServiceBusNamingConvention(HashFunction hashFunction)
+        {
+            _hashFunction = hashFunction;
+        }
 
         public string GetSubscriptionName(Type messageType, Type handlerType)
         {
@@ -26,15 +32,14 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 
         public string GetSubscriptionFilterValue(Type messageType)
         {
-            return messageType.FullName.GetHashCode().ToString();
+            return _hashFunction.GetHash(messageType.FullName);
         }
 
         public string GetSubscriptionFilterName(Type messageType, int maxLength)
         {
-            var typeName = this.GetSubscriptionFilterValue(messageType);
-            string prefix = GetTypeNamePrefix(messageType, maxLength - 1 - typeName.Length);
+            string prefix = GetTypeNamePrefix(messageType, maxLength);
 
-            return $"{prefix}-{typeName}";
+            return prefix;
         }
 
         private static string GetServiceName(Type type)
