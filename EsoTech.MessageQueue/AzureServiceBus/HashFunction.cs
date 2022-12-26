@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 
 namespace EsoTech.MessageQueue.AzureServiceBus
 {
-    public class HashFunction
+    public class HashFunction: IDisposable
     {
         private MD5? _md5;
 
@@ -20,6 +20,11 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             byte[] hashBytes = md5.ComputeHash(inputBytes);
 
             return Convert.ToBase64String(hashBytes);
+        }
+
+        public void Dispose()
+        {
+            _md5?.Dispose();
         }
     }
 }
