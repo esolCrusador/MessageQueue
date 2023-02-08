@@ -19,9 +19,7 @@ namespace EsoTech.MessageQueue
             await _consumer.Initialize(cancellationToken);
         }
 
-        public async Task StopAsync(CancellationToken cancellationToken)
-        {
-            await _consumer.DisposeAsync();
-        }
+        public Task StopAsync(CancellationToken cancellationToken) =>
+            Task.CompletedTask; // _consumer is disposed by ServiceProvider
     }
 }
