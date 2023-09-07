@@ -1,5 +1,5 @@
-﻿using Microsoft.Azure.ServiceBus;
-using Microsoft.Azure.ServiceBus.Management;
+﻿using Azure.Messaging.ServiceBus;
+using Azure.Messaging.ServiceBus.Administration;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
@@ -11,12 +11,12 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 {
     public class AzureServiceBusManager
     {
-        private ManagementClient? _client;
+        private ServiceBusAdministrationClient? _client;
         private readonly AzureServiceBusConfiguration _configuration;
         private readonly AzureServiceBusNamingConvention _namingConvention;
         private readonly ILogger _logger;
 
-        private ManagementClient Client => _client ??= new ManagementClient(_configuration.ConnectionString);
+        private ServiceBusAdministrationClient Client => _client ??= new ServiceBusAdministrationClient(_configuration.ConnectionString);
 
         public AzureServiceBusManager(AzureServiceBusConfiguration configuration, AzureServiceBusNamingConvention namingConvention, ILogger<AzureServiceBusManager> logger)
         {
@@ -34,11 +34,11 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             stopwatch.Start();
 
             if (!await Client.SubscriptionExistsAsync(topicName, subscriptionName))
-                await Client.CreateSubscriptionAsync(new SubscriptionDescription(topicName, subscriptionName)
+                await Client.CreateSubscriptionAsync(new CreateSubscriptionOptions(topicName, subscriptionName)
                 {
                     MaxDeliveryCount = _configuration.MaxDeliveryCount,
                     DefaultMessageTimeToLive = _configuration.DefaultMessageTimeToLive,
-                    EnableDeadLetteringOnMessageExpiration = true
+                    DeadLetteringOnMessageExpiration = true
                 });
             await UpdateRules(topicName, subscriptionName, messageTypes);
 
@@ -59,12 +59,12 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                 await Client.DeleteRuleAsync(topicName, subscriptionName, rule.Name);
             var messageTypesToAdd = messageRules.Where(kvp => !rules.Any(r => r.Name == kvp.Key));
             foreach (var (ruleName, messageType) in messageTypesToAdd)
-                await Client.CreateRuleAsync(topicName, subscriptionName, new RuleDescription
+                await Client.CreateRuleAsync(topicName, subscriptionName, new CreateRuleOptions
                 {
                     Name = ruleName,
-                    Filter = new CorrelationFilter
+                    Filter = new CorrelationRuleFilter
                     {
-                        Properties = { ["EsoTechMessageKind"] = messageType }
+                        ApplicationProperties = { ["EsoTechMessageKind"] = messageType }
                     }
                 });
         }
@@ -76,9 +76,9 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             stopwatch.Start();
 
             if (!await Client.TopicExistsAsync(topicName))
-                await Client.CreateTopicAsync(new TopicDescription(topicName)
+                await Client.CreateTopicAsync(new CreateTopicOptions(topicName)
                 {
-                    MaxSizeInMB = _configuration.MaxSizeInMB,
+                    MaxSizeInMegabytes = _configuration.MaxSizeInMB,
                     DefaultMessageTimeToLive = _configuration.DefaultMessageTimeToLive,
                 });
 
@@ -93,9 +93,9 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             stopwatch.Start();
 
             if (!await Client.QueueExistsAsync(queueName))
-                await Client.CreateQueueAsync(new QueueDescription(queueName)
+                await Client.CreateQueueAsync(new CreateQueueOptions(queueName)
                 {
-                    MaxSizeInMB = _configuration.MaxSizeInMB,
+                    MaxSizeInMegabytes = _configuration.MaxSizeInMB,
                     DefaultMessageTimeToLive = _configuration.DefaultMessageTimeToLive
                 });
 
@@ -103,37 +103,24 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             _logger.LogInformation($"Queue {queueName} updated for {stopwatch.ElapsedMilliseconds}ms");
         }
 
-        private Task<IList<RuleDescription>> GetAllRules(string topicName, string subscriptionName) =>
-            GetAll((take, skip) => Client.GetRulesAsync(topicName, subscriptionName));
+        private Task<IList<RuleProperties>> GetAllRules(string topicName, string subscriptionName) =>
+            GetAll(Client.GetRulesAsync(topicName, subscriptionName));
 
-        private static async Task<IList<TEntity>> GetAll<TEntity>(Func<int, int, Task<IList<TEntity>>> fetch)
+        private static async Task<IList<TEntity>> GetAll<TEntity>(IAsyncEnumerable<TEntity> results)
         {
-            int skip = 0;
-            const int take = 100;
+            var entities = new List<TEntity>();
+            await foreach (var entry in results)
+                entities.Add(entry);
 
-            IList<TEntity>? entitites = null;
-            IList<TEntity> loadedEntities;
-            do
-            {
-                loadedEntities = await fetch(take, skip);
-                if (entitites == null)
-                    entitites = loadedEntities;
-                else
-                    foreach (var r in loadedEntities)
-                        entitites.Add(r);
-
-                skip += loadedEntities.Count;
-            } while (loadedEntities.Count == take);
-
-            return entitites;
+            return entities;
         }
 
         public async Task PurgeAll()
         {
-            var queues = await GetAll((take, skip) => Client.GetQueuesAsync(take, skip));
-            await Task.WhenAll(queues.Select(queue => Client.DeleteQueueAsync(queue.Path)));
-            var topics = await GetAll((taks, skip) => Client.GetTopicsAsync(taks, skip));
-            await Task.WhenAll(topics.Select(topick => Client.DeleteTopicAsync(topick.Path)));
+            var queues = await GetAll(Client.GetQueuesAsync());
+            await Task.WhenAll(queues.Select(queue => Client.DeleteQueueAsync(queue.Name)));
+            var topics = await GetAll(Client.GetTopicsAsync());
+            await Task.WhenAll(topics.Select(topick => Client.DeleteTopicAsync(topick.Name)));
         }
     }
 }
