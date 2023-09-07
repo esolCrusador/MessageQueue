@@ -2,7 +2,6 @@
 using EsoTech.MessageQueue.Abstractions;
 using EsoTech.MessageQueue.Serialization;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
 using OpenTracing;
 using OpenTracing.Propagation;
 using OpenTracing.Tag;
@@ -10,6 +9,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace EsoTech.MessageQueue.AzureServiceBus
@@ -138,7 +138,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                         .WithTag(Tags.Component, "MessageQueue")
                         .WithTag(Tags.SpanKind, Tags.SpanKindProducer)
                         .WithTag("mq.message_name", type.Name)
-                        .WithTag("mq.message", JsonConvert.SerializeObject(eventMessage))
+                        .WithTag("mq.message", JsonSerializer.Serialize(eventMessage, eventMessage.GetType()))
                         .Start();
 
                     Tracer.Inject(span.Context, BuiltinFormats.TextMap, new TextMapInjectAdapter(wrapped.Headers));
