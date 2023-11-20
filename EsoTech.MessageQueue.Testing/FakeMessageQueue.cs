@@ -10,17 +10,25 @@ namespace EsoTech.MessageQueue.Testing
 {
     public sealed class FakeMessageQueue : IMessageQueue, IMessageConsumer
     {
+        private readonly bool _automaticPolling;
         private ILookup<Type, Func<object, CancellationToken, Task>> _handlers;
         private IEnumerable<IEventMessageHandler> _eventHandlerSources;
         private IEnumerable<ICommandMessageHandler> _commandHandleSources;
 
         public MessagesCollection Messages { get; } = new MessagesCollection();
 
-        public FakeMessageQueue()
+        public FakeMessageQueue(ContinuousPollingSuppressor continuousPollingSuppressor) : this(false)
+        { }
+
+        public FakeMessageQueue() : this(true)
+        { }
+
+        private FakeMessageQueue(bool automaticPolling)
         {
             _eventHandlerSources = Enumerable.Empty<IEventMessageHandler>();
             _commandHandleSources = Enumerable.Empty<ICommandMessageHandler>();
             _handlers = GetHandlersLookup();
+            _automaticPolling = automaticPolling;
         }
 
         private ILookup<Type, Func<object, CancellationToken, Task>> GetHandlersLookup()
@@ -150,6 +158,15 @@ namespace EsoTech.MessageQueue.Testing
             return false;
         }
 
+        public async Task<int> HandleAll(CancellationToken cancellationToken = default)
+        {
+            int times = 0;
+            while (await TryHandleNext(cancellationToken))
+                times++;
+
+            return times;
+        }
+
         public async Task ProcessOnlyCurrentMessages()
         {
             await ProcessCurrentUntilFirstOfType<FakeMessageQueue>();
@@ -180,18 +197,21 @@ namespace EsoTech.MessageQueue.Testing
         public Task SendEvent(object eventMessage) => Send(eventMessage);
         public Task SendCommand(object commandMessage) => Send(commandMessage);
 
-        private Task Send(object msg)
+        private async Task Send(object msg)
         {
             Messages.AddMessage(msg);
-            return Task.CompletedTask;
+
+            if (_automaticPolling)
+                await HandleAll();
         }
 
-        public Task SendEvents(IEnumerable<object> eventMessages)
+        public async Task SendEvents(IEnumerable<object> eventMessages)
         {
             foreach (var msg in eventMessages)
                 Messages.AddMessage(msg);
 
-            return Task.CompletedTask;
+            if (_automaticPolling)
+                await HandleAll();
         }
     }
 }

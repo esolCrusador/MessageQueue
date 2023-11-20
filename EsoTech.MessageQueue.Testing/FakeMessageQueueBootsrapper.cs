@@ -6,18 +6,20 @@ namespace EsoTech.MessageQueue.Testing
 {
     public static class FakeMessageQueueBootsrapper
     {
-        public static FakeMessageQueue AddFakeMessageQueue(this IServiceCollection services, FakeMessageQueue? fakeMessageQueue = null, bool pullAutomatically = false)
+        public static void AddFakeMessageQueue(this IServiceCollection services, FakeMessageQueue? fakeMessageQueue = null, bool pullAutomatically = false)
         {
-            fakeMessageQueue ??= new FakeMessageQueue();
-            services.AddSingleton(s => fakeMessageQueue);
+            if (fakeMessageQueue != null)
+                services.AddSingleton(s => fakeMessageQueue);
+            else
+                services.AddSingleton<FakeMessageQueue>();
+
             services.AddSingleton<FakeMessageQueueInitializer>();
             services.AddSingleton<IMessageQueue>(s => s.GetRequiredService<FakeMessageQueue>());
             services.AddSingleton<IMessageConsumer>(s => s.GetRequiredService<FakeMessageQueue>());
+            services.AddHostedService<FakeMessageQueueInitializer>();
 
             if (!pullAutomatically)
                 services.SuppressContinuousPolling();
-
-            return fakeMessageQueue;
         }
 
         public static void ImportFakeMessageQueue(this IServiceCollection services, IServiceProvider serviceProvider)
