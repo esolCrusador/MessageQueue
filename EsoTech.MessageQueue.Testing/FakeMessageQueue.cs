@@ -17,13 +17,7 @@ namespace EsoTech.MessageQueue.Testing
 
         public MessagesCollection Messages { get; } = new MessagesCollection();
 
-        public FakeMessageQueue(ContinuousPollingSuppressor continuousPollingSuppressor) : this(false)
-        { }
-
-        public FakeMessageQueue() : this(true)
-        { }
-
-        private FakeMessageQueue(bool automaticPolling)
+        public FakeMessageQueue(bool automaticPolling)
         {
             _eventHandlerSources = Enumerable.Empty<IEventMessageHandler>();
             _commandHandleSources = Enumerable.Empty<ICommandMessageHandler>();
