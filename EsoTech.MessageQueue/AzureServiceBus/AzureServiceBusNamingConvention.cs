@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Microsoft.Extensions.Configuration;
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 
@@ -9,15 +11,18 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         private readonly Regex _notNeeded = new Regex("(\\w+\\.)|\\[|\\]", RegexOptions.Compiled);
         private readonly Regex _toReplace = new Regex("(`\\d+)|,", RegexOptions.Compiled);
         private readonly HashFunction _hashFunction;
+        private readonly Dictionary<string, string> _serviceNamesRemap;
 
-        public AzureServiceBusNamingConvention(HashFunction hashFunction)
+        public AzureServiceBusNamingConvention(HashFunction hashFunction, IConfiguration configuration)
         {
             _hashFunction = hashFunction;
+            _serviceNamesRemap = new Dictionary<string, string>();
+            configuration.GetSection("AzureServiceBusNames").Bind(_serviceNamesRemap, opt => opt.ErrorOnUnknownConfiguration = true);
         }
 
         public string GetSubscriptionName(Type messageType, Type handlerType)
         {
-            return $"{GetTopicName(messageType)}_{GetServiceName(handlerType)}";
+            return GetServiceName(handlerType);
         }
 
         public string GetTopicName(Type messageType)
@@ -42,14 +47,14 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             return prefix;
         }
 
-        private static string GetServiceName(Type type)
+        private string GetServiceName(Type type)
         {
-            var typeFullName = type?.FullName;
+            var assemblyFullName = type.Assembly.FullName;
+            assemblyFullName = assemblyFullName.Substring(0, assemblyFullName.IndexOf(", "));
 
-            if (typeFullName == null)
-                throw new ArgumentException(nameof(type));
+            var serviceName = assemblyFullName.Split('.').Skip(1).First().ToLower();
 
-            return typeFullName.Split('.').Skip(1).First().ToLower();
+            return _serviceNamesRemap.GetValueOrDefault(serviceName) ?? serviceName;
         }
 
 
