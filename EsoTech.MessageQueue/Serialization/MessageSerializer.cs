@@ -12,26 +12,28 @@ namespace EsoTech.MessageQueue.Serialization
         private static readonly Histogram DeliveryTime =
             Metrics.CreateHistogram("message_queue_delivery_time_milliseconds", "Time in flight for message queue messages.");
 
-        private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
-        {
-            Converters = { new MessageConverter() }
-        };
+        private readonly JsonSerializerOptions _jsonOptions;
 
-        public MessageSerializer(ILogger<MessageSerializer> logger)
+        public MessageSerializer(ILogger<MessageSerializer> logger): this(logger, new JsonSerializerOptions { Converters = { new MessageConverter() }})
+        {
+        }
+
+        public MessageSerializer(ILogger<MessageSerializer> logger, JsonSerializerOptions jsonSerializerOptions)
         {
             _logger = logger;
+            _jsonOptions = jsonSerializerOptions;
         }
 
         public byte[] Serialize(Message msg)
         {
             msg.TimestampInTicks = DateTime.UtcNow.Ticks;
 
-            return JsonSerializer.SerializeToUtf8Bytes(msg, JsonOptions);
+            return JsonSerializer.SerializeToUtf8Bytes(msg, _jsonOptions);
         }
 
         public Message Deserialize(ReadOnlySpan<byte> bytes)
         {
-            var deserialized = JsonSerializer.Deserialize<Message>(bytes, JsonOptions);
+            var deserialized = JsonSerializer.Deserialize<Message>(bytes, _jsonOptions);
 
             if (deserialized?.TimestampInTicks != null)
             {

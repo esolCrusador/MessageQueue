@@ -17,26 +17,26 @@ namespace EsoTech.MessageQueue.Serialization
         {
             var message = new Message();
             reader.Read();
-            if (reader.TokenType != JsonTokenType.PropertyName && reader.GetString() != nameof(Message.PayloadTypeName))
+            if (reader.TokenType != JsonTokenType.PropertyName && reader.GetString() != GetPropertyName(options, nameof(Message.PayloadTypeName)))
                 throw new System.ArgumentException("Message was not properly serialized");
             reader.Read();
             message.PayloadTypeName = reader.GetString();
 
             reader.Read();
-            if (reader.TokenType != JsonTokenType.PropertyName && reader.GetString() != nameof(Message.Headers))
+            if (reader.TokenType != JsonTokenType.PropertyName && reader.GetString() != GetPropertyName(options, nameof(Message.Headers)))
                 throw new System.ArgumentException("Message was not properly serialized");
             reader.Read();
             var dictConverter = (JsonConverter<Dictionary<string, string>>)options.GetConverter(typeof(Dictionary<string, string>));
-            message.Headers = dictConverter.Read(ref reader, typeof(Dictionary<string, string>), options);
+            message.Headers = dictConverter.Read(ref reader, typeof(Dictionary<string, string>), options)!;
 
             reader.Read();
-            if (reader.TokenType != JsonTokenType.PropertyName && reader.GetString() != nameof(Message.TimestampInTicks))
+            if (reader.TokenType != JsonTokenType.PropertyName && reader.GetString() != GetPropertyName(options, nameof(Message.TimestampInTicks)))
                 throw new System.ArgumentException("Message was not properly serialized");
             reader.Read();
             message.TimestampInTicks = reader.GetInt64();
 
             reader.Read();
-            if (reader.TokenType != JsonTokenType.PropertyName && reader.GetString() != nameof(Message.Payload))
+            if (reader.TokenType != JsonTokenType.PropertyName && reader.GetString() != GetPropertyName(options, nameof(Message.Payload)))
                 throw new System.ArgumentException("Message was not properly serialized");
             reader.Read();
             var payloadType = Type.GetType(message.PayloadTypeName);
@@ -51,7 +51,19 @@ namespace EsoTech.MessageQueue.Serialization
         public override void Write(Utf8JsonWriter writer, Message value, JsonSerializerOptions options)
         {
             value.PayloadTypeName = value.Payload?.GetType().AssemblyQualifiedName;
-            JsonSerializer.Serialize(writer, value);
+
+            writer.WriteStartObject();
+
+            writer.WriteString(GetPropertyName(options, nameof(Message.PayloadTypeName)), value.PayloadTypeName);
+            writer.WritePropertyName(GetPropertyName(options, nameof(Message.Headers)));
+            writer.WriteRawValue(JsonSerializer.Serialize(value.Headers, options));
+            
+            writer.WriteNumber(GetPropertyName(options, nameof(Message.TimestampInTicks)), value.TimestampInTicks);
+            
+            writer.WritePropertyName(GetPropertyName(options, nameof(Message.Payload)));
+            writer.WriteRawValue(JsonSerializer.Serialize(value.Payload, options));
+
+            writer.WriteEndObject();
         }
 
         private Converter CreateTypeConverter(JsonConverter converter, Type payloadType)
@@ -75,6 +87,11 @@ namespace EsoTech.MessageQueue.Serialization
                 refReader,
                 options
             ).Compile();
+        }
+
+        private string GetPropertyName(JsonSerializerOptions options, string propertyName)
+        {
+            return options.PropertyNamingPolicy?.ConvertName(propertyName) ?? propertyName;
         }
     }
 }

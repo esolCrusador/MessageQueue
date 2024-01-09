@@ -188,12 +188,18 @@ namespace EsoTech.MessageQueue.Testing
 
         public ValueTask DisposeAsync() => default;
 
-        public Task SendEvent(object eventMessage) => Send(eventMessage);
+        public Task SendEvent(object eventMessage, TimeSpan? delay = default) => Send(eventMessage, delay);
         public Task SendCommand(object commandMessage) => Send(commandMessage);
 
-        private async Task Send(object msg)
+        private async Task Send(object msg, TimeSpan? delay = default)
         {
-            Messages.AddMessage(msg);
+            if (delay.HasValue)
+            {
+                var _ = SendWithDelay(msg, delay.Value);
+            }
+            else
+                Messages.AddMessage(msg);
+
 
             if (_automaticPolling)
                 await HandleAll();
@@ -206,6 +212,12 @@ namespace EsoTech.MessageQueue.Testing
 
             if (_automaticPolling)
                 await HandleAll();
+        }
+
+        private async Task SendWithDelay(object msg, TimeSpan delay)
+        {
+            await Task.Delay(delay);
+            await Send(msg);
         }
     }
 }

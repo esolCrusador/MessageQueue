@@ -177,6 +177,18 @@ namespace EsoTech.MessageQueue.Tests
         }
 
         [Fact]
+        public async Task TryHandleNext_Should_Invoke_Appropriate_Handler_With_Delay()
+        {
+            var msg = new FooDelayedMessage { Text = "some text" };
+
+            await _queue.SendEvent(msg, TimeSpan.FromSeconds(1));
+            await Task.Delay(TimeSpan.FromSeconds(2));
+            (await _subscriber.TryHandleNext()).Should().BeTrue();
+
+            _fooHandler.DelayedLog.Single().Text.Should().Be(msg.Text);
+        }
+
+        [Fact]
         public async Task HandleNext_Should_Not_Invoke_Inappropriate_Handlers()
         {
             await _queue.SendEvent(new FooMsg());

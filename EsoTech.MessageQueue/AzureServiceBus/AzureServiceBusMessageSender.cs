@@ -19,7 +19,6 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         private readonly ServiceBusClient _serviceBusClient;
         private readonly AzureServiceBusNamingConvention _namingConvention;
         private readonly MessageSerializer _messageSerializer;
-        private readonly MessageQueueConfiguration _messageQueueConfiguration;
         private readonly AzureServiceBusManager _azureServiceBusManager;
         private readonly TracerFactory _tracerFactory;
         private readonly ConcurrentDictionary<string, Task<ServiceBusSender>> _sendersByTopic;
@@ -31,7 +30,6 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             TracerFactory tracerFactory,
             AzureServiceBusNamingConvention namingConvention,
             MessageSerializer messageSerializer,
-            MessageQueueConfiguration messageQueueConfiguration,
             AzureServiceBusClientHolder serviceBusClientHolder,
             AzureServiceBusManager azureServiceBusManager,
             ILogger<AzureServiceBusMessageSender> logger)
@@ -41,12 +39,11 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             _serviceBusClient = serviceBusClientHolder.Instance;
             _namingConvention = namingConvention;
             _messageSerializer = messageSerializer;
-            _messageQueueConfiguration = messageQueueConfiguration;
             _azureServiceBusManager = azureServiceBusManager;
             _logger = logger;
         }
 
-        public async Task SendEvent(object eventMessage)
+        public async Task SendEvent(object eventMessage, TimeSpan? delay = default)
         {
             var sender = await _sendersByTopic.GetOrAdd(_namingConvention.GetTopicName(eventMessage.GetType()), async topickName =>
             {
@@ -54,7 +51,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                 return _serviceBusClient.CreateSender(topickName);
             });
 
-            await Send(sender, eventMessage);
+            await Send(sender, eventMessage, delay);
         }
 
         public async Task SendEvents(IEnumerable<object> eventMessages)
@@ -90,11 +87,11 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             );
         }
 
-        private async Task Send(ServiceBusSender sender, object msg)
+        private async Task Send(ServiceBusSender sender, object msg, TimeSpan? delay = default)
         {
             try
             {
-                await sender.SendMessageAsync(CreateMessage(msg));
+                await sender.SendMessageAsync(CreateMessage(msg, delay));
             }
             catch (Exception ex)
             {
@@ -118,7 +115,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             }
         }
 
-        private ServiceBusMessage CreateMessage(object eventMessage)
+        private ServiceBusMessage CreateMessage(object eventMessage, TimeSpan? delay = default)
         {
             ISpan? span = null;
 
@@ -146,7 +143,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 
                 var bytes = _messageSerializer.Serialize(wrapped);
 
-                return new ServiceBusMessage(bytes)
+                var message = new ServiceBusMessage(bytes)
                 {
                     ApplicationProperties =
                     {
@@ -154,6 +151,10 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                         ["EsoTechMessageKind"] = _namingConvention.GetSubscriptionFilterValue(eventMessage.GetType())
                     }
                 };
+                if (delay.HasValue)
+                    message.ScheduledEnqueueTime = DateTimeOffset.UtcNow + delay.Value;
+
+                return message;
             }
             finally
             {
