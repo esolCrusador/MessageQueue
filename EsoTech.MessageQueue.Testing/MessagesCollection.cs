@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading;
 
@@ -47,7 +48,7 @@ namespace EsoTech.MessageQueue.Testing
             return bytes == null ? null : _serializer.Deserialize(bytes).Payload;
         }
 
-        public bool TryTake(out object? msg)
+        public bool TryTake([MaybeNullWhen(false)] out object? msg)
         {
             bool suceeded = _messages.TryTake(out var bytes);
             msg = suceeded ? _serializer.Deserialize(bytes).Payload : null;
