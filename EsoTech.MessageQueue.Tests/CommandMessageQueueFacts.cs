@@ -67,7 +67,7 @@ namespace EsoTech.MessageQueue.Tests
             //}
         }
 
-        protected CommandMessageQueueFacts(IServiceProvider serviceProvider)
+        private CommandMessageQueueFacts(IServiceProvider serviceProvider)
         {
             _serviceProvier = serviceProvider;
 
