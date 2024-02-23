@@ -112,7 +112,7 @@ namespace EsoTech.MessageQueue.Tests
             await using (var scope = _serviceProvier.CreateAsyncScope())
             {
                 var _queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
-                await _queue.SendEvent(new FooMsg());
+                _queue.SendEvent(new FooMsg());
             }
 
             _fooHandler.Log.OfType<object>().Concat(_barHandler.Log).Should().BeEmpty();
@@ -128,7 +128,7 @@ namespace EsoTech.MessageQueue.Tests
             await using (var scope = _serviceProvier.CreateAsyncScope())
             {
                 var _queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
-                await _queue.SendEvent(msg);
+                _queue.SendEvent(msg);
                 (await _subscriber.TryHandleNext()).Should().BeFalse();
             }
             await _subscriber.HandleNext();
@@ -145,7 +145,7 @@ namespace EsoTech.MessageQueue.Tests
             await using (var scope = _serviceProvier.CreateAsyncScope())
             {
                 var _queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
-                await _queue.SendEvents(new List<FooMsg> { msg1, msg2 });
+                _queue.SendEvents(new List<FooMsg> { msg1, msg2 });
                 (await _subscriber.TryHandleNext()).Should().BeFalse();
             }
             await _subscriber.HandleNext();
@@ -165,8 +165,8 @@ namespace EsoTech.MessageQueue.Tests
             await using (var scope = _serviceProvier.CreateAsyncScope())
             {
                 var _queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
-                await _queue.SendEvent(msg1);
-                await _queue.SendEvent(msg2);
+                _queue.SendEvent(msg1);
+                _queue.SendEvent(msg2);
                 (await _subscriber.TryHandleNext()).Should().BeFalse();
             }
             await _subscriber.HandleNext();
@@ -186,10 +186,10 @@ namespace EsoTech.MessageQueue.Tests
             await using (var scope = _serviceProvier.CreateAsyncScope())
             {
                 var _queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
-                await _queue.SendEvent(msg1);
-                await _queue.SendEvent(msg2);
-                await _queue.SendEvent(new FooMsg { Text = "Delayed" }, TimeSpan.FromMilliseconds(100));
-                await _queue.SendCommand(new BarMsg { Text = "Command" });
+                _queue.SendEvent(msg1);
+                _queue.SendEvent(msg2);
+                _queue.SendEvent(new FooMsg { Text = "Delayed" }, TimeSpan.FromMilliseconds(100));
+                _queue.SendCommand(new BarMsg { Text = "Command" });
                 (await _subscriber.TryHandleNext()).Should().BeFalse();
             }
             await _subscriber.HandleNext();
@@ -213,8 +213,8 @@ namespace EsoTech.MessageQueue.Tests
             await using (var scope = _serviceProvier.CreateAsyncScope())
             {
                 var _queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
-                await _queue.SendEvent(msg1);
-                await _queue.SendEvent(msg2);
+                _queue.SendEvent(msg1);
+                _queue.SendEvent(msg2);
             }
 
             await _subscriber.HandleNext();
@@ -231,8 +231,8 @@ namespace EsoTech.MessageQueue.Tests
             await using (var scope = _serviceProvier.CreateAsyncScope())
             {
                 var _queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
-                await _queue.SendEvent(msg1);
-                await _queue.SendEvent(msg2);
+                _queue.SendEvent(msg1);
+                _queue.SendEvent(msg2);
             }
 
             await _subscriber.HandleNext();
