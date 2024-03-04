@@ -55,7 +55,6 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         private readonly AzureServiceBusManager _azureServiceBusManager;
         private readonly ILogger<AzureServiceBusConsumer> _logger;
 
-        private ILookup<Guid, HandlerByMessageTypeEntry>? _handlersByMessageType;
         private IList<ServiceBusProcessor>? _processors;
         private bool _initialized = false;
 
@@ -145,7 +144,6 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                 })
                 .ToArray();
 
-            _handlersByMessageType = eventHandlers.Concat(commandHandlers).ToLookup(x => x.MessageType.GUID);
             var eventProcessors = await SubscribeOnEvents(eventHandlers, cancellation);
             var commandProcessors = await SubscribeOnCommands(commandHandlers, cancellation);
             _processors = eventProcessors.Concat(commandProcessors).ToList();
@@ -211,14 +209,14 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             {
                 var topicName = group.Key;
                 var subscriptions = group
-                    .Select(x => new KeyValuePair<string, Type>(_namingConvention.GetSubscriptionName(x.MessageType, x.HandlerType), x.MessageType))
+                    .Select(x => new KeyValuePair<string, HandlerByMessageTypeEntry>(_namingConvention.GetSubscriptionName(x.MessageType, x.HandlerType), x))
                     .GroupBy(kvp => kvp.Key, kvp => kvp.Value)
                     .ToList();
 
                 foreach (var subscriptionMessages in subscriptions)
                 {
                     var subscriptionName = subscriptionMessages.Key;
-                    await _azureServiceBusManager.UpdateSubscription(topicName, subscriptionName, subscriptionMessages);
+                    await _azureServiceBusManager.UpdateSubscription(topicName, subscriptionName, subscriptionMessages.Select(m => m.MessageType));
                     _logger.LogInformation("Subscribing to topic {TopicName}, subscription {SubscriptionName}", topicName, subscriptionName);
 
                     var processor = _serviceBusClient.CreateProcessor(topicName, subscriptionName,
@@ -229,8 +227,9 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                             MaxAutoLockRenewalDuration = TimeSpan.Zero,
                             AutoCompleteMessages = false
                         });
+                    var handlers = subscriptionMessages.GroupBy(m => m.MessageType).ToDictionary(g => g.Key, g => g.ToArray());
 
-                    processor.ProcessMessageAsync += ProcessMessage;
+                    processor.ProcessMessageAsync += arguments => ProcessMessage(handlers, arguments);
                     processor.ProcessErrorAsync += ProcessError;
 
                     await processor.StartProcessingAsync(cancellation);
@@ -262,8 +261,9 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                         MaxAutoLockRenewalDuration = TimeSpan.Zero,
                         AutoCompleteMessages = false
                     });
+                var handlers = group.GroupBy(mh => mh.MessageType).ToDictionary(g => g.Key, g => g.ToArray());
 
-                processor.ProcessMessageAsync += ProcessMessage;
+                processor.ProcessMessageAsync += arguments => ProcessMessage(handlers, arguments);
                 processor.ProcessErrorAsync += ProcessError;
 
                 await processor.StartProcessingAsync(cancellation);
@@ -275,7 +275,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         }
 
 
-        private async Task ProcessMessage(ProcessMessageEventArgs args)
+        private async Task ProcessMessage(IReadOnlyDictionary<Type, HandlerByMessageTypeEntry[]> handlersByMessageType, ProcessMessageEventArgs args)
         {
             if (!_messageSerializer.TryDeserialize(args.Message.Body, out var message))
             {
@@ -291,10 +291,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 
             try
             {
-                var handlersByMessageType = _handlersByMessageType
-                    ?? throw new ArgumentException("Was not initialized", nameof(_handlersByMessageType));
-                var handlers = handlersByMessageType[payloadType.GUID].ToList();
-                if (handlers.Count == 0)
+                if (!handlersByMessageType.TryGetValue(payloadType, out var handlers))
                 {
                     _logger.LogError("Processed message with no handlers, subscription filters are not set up properly: {Sequence}, {PayloadType}, {MessageBody}.",
                         args.Message.EnqueuedSequenceNumber, payloadType, JsonSerializer.Serialize(message.Payload, message.Payload.GetType()));
