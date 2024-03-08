@@ -65,7 +65,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                     return _serviceBusClient.CreateSender(topickName);
                 });
 
-                await Send(sender, topicMessages);
+                await SendMultiple(sender, topicMessages);
             }
         }
 
@@ -78,6 +78,22 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             });
 
             await Send(sender, commandMessage);
+        }
+
+        public async Task SendCommands(IEnumerable<object> commands)
+        {
+            var queues = commands.GroupBy(c => _namingConvention.GetQueueName(c.GetType()));
+
+            foreach (var queueMessages in queues)
+            {
+                var sender = await _sendersByTopic.GetOrAdd(queueMessages.Key, async queueName =>
+                {
+                    await _azureServiceBusManager.UpdateQueue(queueName);
+                    return _serviceBusClient.CreateSender(queueName);
+                });
+
+                await SendMultiple(sender, queueMessages);
+            }
         }
 
         public async ValueTask DisposeAsync()
@@ -101,7 +117,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             }
         }
 
-        public async Task Send(ServiceBusSender sender, IEnumerable<object> eventMessages)
+        public async Task SendMultiple(ServiceBusSender sender, IEnumerable<object> eventMessages)
         {
             try
             {

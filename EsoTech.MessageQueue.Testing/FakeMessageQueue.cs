@@ -214,6 +214,15 @@ namespace EsoTech.MessageQueue.Testing
                 await HandleAll();
         }
 
+        public async Task SendCommands(IEnumerable<object> commands)
+        {
+            foreach (var cmd in commands)
+                Messages.AddMessage(cmd);
+
+            if (_automaticPolling)
+                await HandleAll();
+        }
+
         private async Task SendWithDelay(object msg, TimeSpan delay)
         {
             await Task.Delay(delay);

@@ -9,5 +9,6 @@ namespace EsoTech.MessageQueue.Abstractions
         Task SendEvent(object eventMessage, TimeSpan? delay = default);
         Task SendEvents(IEnumerable<object> eventMessages);
         Task SendCommand(object commandMessage);
+        Task SendCommands(IEnumerable<object> commands);
     }
 }

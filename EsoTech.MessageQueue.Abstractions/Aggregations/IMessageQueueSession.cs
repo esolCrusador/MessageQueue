@@ -12,6 +12,6 @@ namespace EsoTech.MessageQueue.Abstractions.Aggregations
         void ClearEvents(Predicate<object> predicate);
         void ClearDelayedEvents(Predicate<object> predicate);
         void ClearCommands(Predicate<object> predicate);
-        ValueTask FlushEvents();
+        ValueTask FlushMessages();
     }
 }

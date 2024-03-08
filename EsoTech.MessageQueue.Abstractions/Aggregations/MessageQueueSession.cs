@@ -55,7 +55,7 @@ namespace EsoTech.MessageQueue.Abstractions.Aggregations
             _aggregator = aggregator;
         }
 
-        public ValueTask DisposeAsync() => FlushEvents();
+        public ValueTask DisposeAsync() => FlushMessages();
 
         public void SendCommand(object commandMessage)
         {
@@ -84,8 +84,15 @@ namespace EsoTech.MessageQueue.Abstractions.Aggregations
 
         public void ClearCommands(Predicate<object> predicate) => _commands?.RemoveAll(predicate);
 
-        public async ValueTask FlushEvents()
+        public async ValueTask FlushMessages()
         {
+            if (
+                (_commands == null || _commands.Count == 0)
+                && (_delayedEvents == null || _delayedEvents.Count == 0)
+                && (_events == null || _events.Count == 0)
+            )
+                return;
+
             Task? task = null;
             List<Task>? tasks = null;
 
