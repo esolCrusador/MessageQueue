@@ -14,7 +14,7 @@ namespace EsoTech.MessageQueue.Serialization
 
         private readonly JsonSerializerOptions _jsonOptions;
 
-        public MessageSerializer(ILogger<MessageSerializer> logger): this(logger, new JsonSerializerOptions { Converters = { new MessageConverter() }})
+        public MessageSerializer(ILogger<MessageSerializer> logger) : this(logger, new JsonSerializerOptions { Converters = { new MessageConverter() } })
         {
         }
 
@@ -30,6 +30,9 @@ namespace EsoTech.MessageQueue.Serialization
 
             return JsonSerializer.SerializeToUtf8Bytes(msg, _jsonOptions);
         }
+
+        public string SerializeToString(object value, Type type) =>
+            JsonSerializer.Serialize(value, type, _jsonOptions);
 
         public Message Deserialize(ReadOnlySpan<byte> bytes)
         {

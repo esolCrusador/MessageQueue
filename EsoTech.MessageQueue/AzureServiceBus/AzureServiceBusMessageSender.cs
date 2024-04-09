@@ -138,6 +138,8 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             try
             {
                 var type = eventMessage.GetType();
+                var serializedMessage = _messageSerializer.SerializeToString(eventMessage, type);
+
 
                 var wrapped = new Message
                 {
@@ -151,11 +153,12 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                         .WithTag(Tags.Component, "MessageQueue")
                         .WithTag(Tags.SpanKind, Tags.SpanKindProducer)
                         .WithTag("mq.message_name", type.Name)
-                        .WithTag("mq.message", JsonSerializer.Serialize(eventMessage, eventMessage.GetType()))
+                        .WithTag("mq.message", serializedMessage)
                         .Start();
 
                     Tracer.Inject(span.Context, BuiltinFormats.TextMap, new TextMapInjectAdapter(wrapped.Headers));
                 }
+                _logger.LogInformation("Sending Message {PayloadType}, {MessageBody}", type, serializedMessage);
 
                 var bytes = _messageSerializer.Serialize(wrapped);
 
@@ -164,7 +167,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                     ApplicationProperties =
                     {
                         // Warning: subscription filters use this property, don't change.
-                        ["EsoTechMessageKind"] = _namingConvention.GetSubscriptionFilterValue(eventMessage.GetType())
+                        ["EsoTechMessageKind"] = _namingConvention.GetSubscriptionFilterValue(type)
                     }
                 };
                 if (delay.HasValue)

@@ -13,7 +13,6 @@ using System.Reactive;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Reactive.Threading.Tasks;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -288,13 +287,14 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             var payloadType = (message?.Payload ?? throw new ArgumentException("No payload")).GetType();
             var eventName = payloadType.Name;
             var topicName = _namingConvention.GetTopicName(payloadType);
+            var serializedMessage = _messageSerializer.SerializeToString(message.Payload, payloadType);
 
             try
             {
                 if (!handlersByMessageType.TryGetValue(payloadType, out var handlers))
                 {
                     _logger.LogError("Processed message with no handlers, subscription filters are not set up properly: {Sequence}, {PayloadType}, {MessageBody}.",
-                        args.Message.EnqueuedSequenceNumber, payloadType, JsonSerializer.Serialize(message.Payload, message.Payload.GetType()));
+                        args.Message.EnqueuedSequenceNumber, payloadType, serializedMessage);
 
                     await args.CompleteMessageAsync(args.Message, args.CancellationToken);
 
@@ -306,7 +306,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                 _logger.LogInformation("Processing Message {Sequence}, {PayloadType}, {MessageBody}",
                     args.Message.EnqueuedSequenceNumber,
                     payloadType,
-                    JsonSerializer.Serialize(message.Payload, message.Payload.GetType()));
+                    serializedMessage);
 
                 using var cancellationTokenSource = new CancellationTokenSource(_messageQueueConfiguration.AckTimeoutMilliseconds);
                 using (MessagesDurations.WithLabels(eventName, topicName).NewTimer())
@@ -329,7 +329,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                             using (Tracer.BuildSpan($"{msgType}")
                                 .WithTag(Tags.Component, "MessageQueue")
                                 .WithTag(Tags.SpanKind, Tags.SpanKindConsumer)
-                                .WithTag("mq.message", JsonSerializer.Serialize(message.Payload, message.Payload.GetType()))
+                                .WithTag("mq.message", serializedMessage)
                                 .AsChildOf(spanContext)
                                 .StartActive(true))
 
