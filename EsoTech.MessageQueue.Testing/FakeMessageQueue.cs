@@ -138,7 +138,7 @@ namespace EsoTech.MessageQueue.Testing
         {
             if (Messages.TryTake(out var msg))
             {
-                var handlers = _handlers[msg.GetType()].ToList();
+                var handlers = _handlers[msg!.GetType()].ToList();
 
                 if (!handlers.Any())
                     return await TryHandleNext(cancellationToken);
@@ -176,7 +176,7 @@ namespace EsoTech.MessageQueue.Testing
 
                 if (Messages.TryTake(out var msg))
                 {
-                    var handlers = _handlers[msg.GetType()].ToList();
+                    var handlers = _handlers[msg!.GetType()].ToList();
 
                     foreach (var handler in handlers)
                         await handler(msg, default);
