@@ -54,7 +54,8 @@ namespace EsoTech.MessageQueue.Tests
                 .AddEventMessageHandler<MultiEventHandler1>()
                 .AddEventMessageHandler<MultiEventHandler2>()
                 .SuppressContinuousPolling()
-                .AddMessageQueue("TestServiceBusConnectionString")
+                .AddMessageQueue()
+                .AddAzureServiceBusMessageQueue(opts => opts.ConnectionStringName = "TestServiceBusConnectionString")
                 .BuildServiceProvider()
             )
             {

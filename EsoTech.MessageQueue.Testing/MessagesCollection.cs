@@ -30,28 +30,23 @@ namespace EsoTech.MessageQueue.Testing
         {
             _messages.Add(_serializer.Serialize(new Message
             {
+                Headers = { ["MessageId"] = Guid.NewGuid().ToString("n") },
                 PayloadTypeName = msg.GetType().AssemblyQualifiedName,
                 Payload = msg,
                 TimestampInTicks = DateTimeOffset.UtcNow.Ticks
             }));
         }
 
-        public object Take(CancellationToken cancellation)
+        public Message Take(CancellationToken cancellation)
         {
             byte[] bytes = _messages.Take(cancellation);
-            return _serializer.Deserialize(bytes).Payload ?? throw new ArgumentException("Null", nameof(Message.Payload));
+            return _serializer.Deserialize(bytes);
         }
 
-        public object? FirstOrDefault()
-        {
-            var bytes = _messages.FirstOrDefault();
-            return bytes == null ? null : _serializer.Deserialize(bytes).Payload;
-        }
-
-        public bool TryTake([MaybeNullWhen(false)] out object? msg)
+        public bool TryTake([MaybeNullWhen(false)] out Message? msg)
         {
             bool suceeded = _messages.TryTake(out var bytes);
-            msg = suceeded ? _serializer.Deserialize(bytes).Payload : null;
+            msg = suceeded ? _serializer.Deserialize(bytes) : null;
             return suceeded;
         }
     }

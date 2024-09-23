@@ -53,7 +53,8 @@ namespace EsoTech.MessageQueue.Tests
                 .AddCommandMessageHandler<MultiCommandHandler1>()
                 .AddCommandMessageHandler<MultiCommandHandler2>()
                 .SuppressContinuousPolling()
-                .AddMessageQueue("TestServiceBusConnectionString")
+                .AddMessageQueue()
+                .AddAzureServiceBusMessageQueue(cfg => cfg.ConnectionStringName = "TestServiceBusConnectionString")
                 .BuildServiceProvider()
             )
             {

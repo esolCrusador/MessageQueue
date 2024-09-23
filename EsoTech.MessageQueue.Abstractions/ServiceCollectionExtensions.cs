@@ -39,7 +39,7 @@ namespace EsoTech.MessageQueue.Abstractions
             return self;
         }
 
-        public static IServiceCollection TryAddMessageQueueSession(this IServiceCollection self)
+        public static IServiceCollection AddMessageQueueSession(this IServiceCollection self)
         {
             self.AddScoped<IMessageQueueSession, MessageQueueSession>();
             self.AddSingleton<CombinedMessagesAggregator>();
@@ -52,13 +52,13 @@ namespace EsoTech.MessageQueue.Abstractions
             return services;
         }
         public static IServiceCollection AddMessageAggregator<TMessage, TAggregatedMessage>(this IServiceCollection services, Action<TAggregatedMessage, TMessage> addMessage)
-            where TAggregatedMessage: class, new()
+            where TAggregatedMessage : class, new()
         {
             services.AddSingleton<IMessagesAggregator>(new SimpleMessagesAggregator<TMessage, TAggregatedMessage>(addMessage));
             return services;
         }
 
         public static IServiceCollection SuppressContinuousPolling(this IServiceCollection self)
-            => self.AddSingleton<ContinuousPollingSuppressor>();
+            => self.Configure<MessageQueueConfiguration>(opts => opts.HandleRealtime = false);
     }
 }
