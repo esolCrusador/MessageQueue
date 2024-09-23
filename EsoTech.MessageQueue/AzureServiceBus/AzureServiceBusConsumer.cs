@@ -314,64 +314,44 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 
                 using (MessagesDurations.WithLabels(eventName, topicName).NewTimer())
                 {
-                    var handlerTasks = handlers.Select(async handlerInfo =>
+                    int failed = 0;
+                    var handlerTasks = new List<KeyValuePair<HandlerByMessageTypeEntry, Task>>(handlers.Length);
+                    foreach (var handlerInfo in handlers)
                     {
-                        if (Tracer == null)
-                        {
-                            await handlerInfo.Handle.Value(message.Payload, args.CancellationToken);
-
-                            return;
-                        }
-
-                        var msgType = message.Payload.GetType().Name;
-                        var currentActive = Tracer.ActiveSpan;
-                        var spanContext = Tracer.Extract(BuiltinFormats.TextMap, new TextMapExtractAdapter(message.Headers));
+                        var task = ExecuteHandler(args, message, serializedMessage, handlerInfo);
+                        handlerTasks.Add(new KeyValuePair<HandlerByMessageTypeEntry, Task>(handlerInfo, task));
 
                         try
                         {
-                            using (Tracer.BuildSpan($"{msgType}")
-                                .WithTag(Tags.Component, "MessageQueue")
-                                .WithTag(Tags.SpanKind, Tags.SpanKindConsumer)
-                                .WithTag("mq.message", serializedMessage)
-                                .AsChildOf(spanContext)
-                                .StartActive(true))
-
-                                try
-                                {
-                                    await handlerInfo.Handle.Value(message.Payload, args.CancellationToken);
-                                }
-                                catch (Exception e)
-                                {
-                                    Tracer.ActiveSpan?.Log(new Dictionary<string, object>
-                                    {
-                                        {"type", e.GetType().Name}, {"message", e.Message}, {"stackTrace", e.StackTrace},
-                                        {"data", e.Data}
-                                    });
-
-                                    Tracer.ActiveSpan?.SetTag("error", true);
-
-                                    throw;
-                                }
+                            await task;
                         }
-                        finally
+                        catch
                         {
-                            Tracer.ScopeManager.Activate(currentActive, true);
+                            failed++;
                         }
-                    }).ToList();
-
-                    try
-                    {
-                        await Task.WhenAll(handlerTasks);
                     }
-                    catch
+
+                    if (failed > 0)
                     {
-                        _notHandledMessages[args.Message.MessageId] =
-                            handlers.Zip(handlerTasks, (mh, handlerTask) => new KeyValuePair<HandlerByMessageTypeEntry, Task>(mh, handlerTask))
+                        _notHandledMessages[args.Message.MessageId] = handlerTasks
                                 .Where(kvp => kvp.Value.IsFaulted)
                                 .Select(kvp => kvp.Key)
                                 .ToArray();
 
-                        throw;
+                        if (failed == 1)
+                        {
+                            var ex = handlerTasks.Single(ht => ht.Value.IsFaulted).Value.Exception;
+                            if (ex.InnerExceptions.Count == 1)
+                                throw ex.InnerExceptions[0];
+
+                            throw ex;
+                        }
+                        else
+                        {
+                            throw new AggregateException(handlerTasks.Where(ht => ht.Value.IsFaulted)
+                                .SelectMany(ht => ht.Value.Exception.InnerExceptions)
+                            );
+                        }
                     }
                 }
 
@@ -384,6 +364,51 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             {
                 _logger.LogError(ex, "ProcessMessage error");
                 FailedMessages.WithLabels(eventName, topicName).Inc();
+            }
+        }
+
+        private async Task ExecuteHandler(ProcessMessageEventArgs args, Message message, string serializedMessage, HandlerByMessageTypeEntry handlerInfo)
+        {
+            if (Tracer == null)
+            {
+                await handlerInfo.Handle.Value(message.Payload, args.CancellationToken);
+
+                return;
+            }
+
+            var msgType = message.Payload.GetType().Name;
+            var currentActive = Tracer.ActiveSpan;
+            var spanContext = Tracer.Extract(BuiltinFormats.TextMap, new TextMapExtractAdapter(message.Headers));
+
+            try
+            {
+                using (Tracer.BuildSpan($"{msgType}")
+                    .WithTag(Tags.Component, "MessageQueue")
+                    .WithTag(Tags.SpanKind, Tags.SpanKindConsumer)
+                    .WithTag("mq.message", serializedMessage)
+                    .AsChildOf(spanContext)
+                    .StartActive(true))
+
+                    try
+                    {
+                        await handlerInfo.Handle.Value(message.Payload, args.CancellationToken);
+                    }
+                    catch (Exception e)
+                    {
+                        Tracer.ActiveSpan?.Log(new Dictionary<string, object>
+                                    {
+                                        {"type", e.GetType().Name}, {"message", e.Message}, {"stackTrace", e.StackTrace},
+                                        {"data", e.Data}
+                                    });
+
+                        Tracer.ActiveSpan?.SetTag("error", true);
+
+                        throw;
+                    }
+            }
+            finally
+            {
+                Tracer.ScopeManager.Activate(currentActive, true);
             }
         }
 
