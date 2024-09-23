@@ -1,37 +1,34 @@
-﻿using EsoTech.MessageQueue.AzureServiceBus;
+﻿using EsoTech.MessageQueue.Abstractions;
+using EsoTech.MessageQueue.AzureServiceBus;
 using EsoTech.MessageQueue.Serialization;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using System;
-using System.Reflection;
 using System.Text.Json;
 
 namespace EsoTech.MessageQueue
 {
     public static class MessageQueueBootstrapper
     {
-        private static Action<AzureServiceBusConfiguration> update = _ => { };
-        public static IServiceCollection AddMessageQueue(this IServiceCollection self,
-            string connectionStringName,
-            int ackTimeoutMilliseconds = 30000,
-            string? clientId = default,
-            string? serviceName = default,
-            int maxRedeliveryCount = -1,
-            int maxConcurrentMessages = 100,
-            Action<AzureServiceBusConfiguration>? updateConfiguration = null
-        )
+        public static IServiceCollection AddMessageQueue(this IServiceCollection self, Action<MessageQueueConfiguration> configure) =>
+            AddMessageQueue(self, (options, _) => configure(options));
+        public static IServiceCollection AddMessageQueue(this IServiceCollection self, Action<MessageQueueConfiguration, IServiceProvider>? configure = null)
         {
-            var callingAssembly = Assembly.GetCallingAssembly();
             self.TryAddSingleton<TracerFactory>();
-            self.TryAddSingleton<MessageQueueConfigurationFactory>();
+            self.TryAddSingleton<MessageQueueConfigurator>();
             self.TryAddSingleton<MessageSerializer>();
-            self.TryAddSingleton(s =>
-            {
-                var factory = s.GetRequiredService<MessageQueueConfigurationFactory>();
-                return factory.Create(callingAssembly, connectionStringName, clientId, ackTimeoutMilliseconds, serviceName, maxRedeliveryCount, maxConcurrentMessages, updateConfiguration ?? update);
-            });
 
-            self.AddAzureServiceBusMessageQueue();
+            self.AddOptions<MessageQueueConfiguration>();
+            self.AddSingleton<IConfigureOptions<MessageQueueConfiguration>>(sp => new ConfigureNamedOptions<MessageQueueConfiguration>(Options.DefaultName,
+                opts =>
+                {
+                    sp.GetRequiredService<IConfiguration>().GetSection("MessageQueue").Bind(opts, c => c.ErrorOnUnknownConfiguration = true);
+                    configure?.Invoke(opts, sp);
+                    sp.GetRequiredService<MessageQueueConfigurator>().SetDefaults(opts);
+                })
+            );
 
             self.AddHostedService<MessageQueueStarter>();
 

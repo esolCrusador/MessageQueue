@@ -42,7 +42,8 @@ namespace EsoTech.MessageQueue.Tests
             public Slow() : base(ConfigureCommonServices(new ServiceCollection())
                 .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddEnvironmentVariables().Build())
                 .SuppressContinuousPolling()
-                .AddMessageQueue("TestServiceBusConnectionString")
+                .AddMessageQueue()
+                .AddAzureServiceBusMessageQueue(opts => opts.ConnectionStringName = "TestServiceBusConnectionString")
                 .BuildServiceProvider()
             )
             {
@@ -52,7 +53,7 @@ namespace EsoTech.MessageQueue.Tests
         private static IServiceCollection ConfigureCommonServices(IServiceCollection services)
         {
             return services.AddLogging()
-                    .TryAddMessageQueueSession()
+                    .AddMessageQueueSession()
                     .AddSingleton<FooEventHandler>().AddSingleton<IEventMessageHandler>(ctx => ctx.GetRequiredService<FooEventHandler>())
                     .AddSingleton<EnvelopedFooEventHandler>().AddSingleton<IEventMessageHandler>(ctx => ctx.GetRequiredService<EnvelopedFooEventHandler>())
                     .AddSingleton<BarEventHandler>().AddSingleton<IEventMessageHandler>(ctx => ctx.GetRequiredService<BarEventHandler>())

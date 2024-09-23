@@ -1,4 +1,5 @@
 ﻿using Azure.Messaging.ServiceBus;
+using Microsoft.Extensions.Options;
 using System;
 
 namespace EsoTech.MessageQueue.AzureServiceBus
@@ -7,15 +8,15 @@ namespace EsoTech.MessageQueue.AzureServiceBus
     {
         public ServiceBusClient Instance { get; }
 
-        public AzureServiceBusClientHolder(MessageQueueConfiguration configuration)
+        public AzureServiceBusClientHolder(IOptions<AzureServiceBusConfiguration> messageQueueOptions)
         {
             try
             {
-                Instance = new ServiceBusClient(configuration.AzureServiceBusConfiguration.ConnectionString);
+                Instance = new ServiceBusClient(messageQueueOptions.Value.ConnectionString);
             }
             catch (FormatException ex)
             {
-                throw new FormatException($"Could not parse connection string \"{configuration.AzureServiceBusConfiguration.ConnectionString}\"", ex);
+                throw new FormatException($"Could not parse connection string \"{messageQueueOptions.Value.ConnectionString}\"", ex);
             }
         }
     }

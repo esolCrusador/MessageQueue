@@ -1,6 +1,7 @@
-﻿using Azure.Messaging.ServiceBus;
-using Azure.Messaging.ServiceBus.Administration;
+﻿using Azure.Messaging.ServiceBus.Administration;
+using EsoTech.MessageQueue.Abstractions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -12,15 +13,17 @@ namespace EsoTech.MessageQueue.AzureServiceBus
     public class AzureServiceBusManager
     {
         private ServiceBusAdministrationClient? _client;
-        private readonly AzureServiceBusConfiguration _configuration;
+        private readonly MessageQueueConfiguration _messageQueueOptions;
+        private readonly AzureServiceBusConfiguration _azureOptions;
         private readonly AzureServiceBusNamingConvention _namingConvention;
         private readonly ILogger _logger;
 
-        private ServiceBusAdministrationClient Client => _client ??= new ServiceBusAdministrationClient(_configuration.ConnectionString);
+        private ServiceBusAdministrationClient Client => _client ??= new ServiceBusAdministrationClient(_azureOptions.ConnectionString);
 
-        public AzureServiceBusManager(AzureServiceBusConfiguration configuration, AzureServiceBusNamingConvention namingConvention, ILogger<AzureServiceBusManager> logger)
+        public AzureServiceBusManager(IOptions<MessageQueueConfiguration> messageQueueOptions, IOptions<AzureServiceBusConfiguration> azureOptions, AzureServiceBusNamingConvention namingConvention, ILogger<AzureServiceBusManager> logger)
         {
-            _configuration = configuration;
+            _messageQueueOptions = messageQueueOptions.Value;
+            _azureOptions = azureOptions.Value;
             _namingConvention = namingConvention;
             _logger = logger;
         }
@@ -36,8 +39,9 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             if (!await Client.SubscriptionExistsAsync(topicName, subscriptionName))
                 await Client.CreateSubscriptionAsync(new CreateSubscriptionOptions(topicName, subscriptionName)
                 {
-                    MaxDeliveryCount = _configuration.MaxDeliveryCount,
-                    DefaultMessageTimeToLive = _configuration.DefaultMessageTimeToLive,
+                    MaxDeliveryCount = _azureOptions.MaxDeliveryCount,
+                    LockDuration = _messageQueueOptions.AckTimeout,
+                    DefaultMessageTimeToLive = _azureOptions.DefaultMessageTimeToLive,
                     DeadLetteringOnMessageExpiration = true
                 });
             await UpdateRules(topicName, subscriptionName, messageTypes);
@@ -78,8 +82,8 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             if (!await Client.TopicExistsAsync(topicName))
                 await Client.CreateTopicAsync(new CreateTopicOptions(topicName)
                 {
-                    MaxSizeInMegabytes = _configuration.MaxSizeInMB,
-                    DefaultMessageTimeToLive = _configuration.DefaultMessageTimeToLive,
+                    MaxSizeInMegabytes = _azureOptions.MaxSizeInMB,
+                    DefaultMessageTimeToLive = _azureOptions.DefaultMessageTimeToLive,
                 });
 
             stopwatch.Stop();
@@ -95,8 +99,9 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             if (!await Client.QueueExistsAsync(queueName))
                 await Client.CreateQueueAsync(new CreateQueueOptions(queueName)
                 {
-                    MaxSizeInMegabytes = _configuration.MaxSizeInMB,
-                    DefaultMessageTimeToLive = _configuration.DefaultMessageTimeToLive
+                    MaxSizeInMegabytes = _azureOptions.MaxSizeInMB,
+                    LockDuration = _messageQueueOptions.AckTimeout,
+                    DefaultMessageTimeToLive = _azureOptions.DefaultMessageTimeToLive
                 });
 
             stopwatch.Stop();

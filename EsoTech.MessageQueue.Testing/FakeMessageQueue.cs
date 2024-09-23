@@ -1,6 +1,7 @@
 using EsoTech.MessageQueue.Abstractions;
 using FluentAssertions;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -113,24 +114,38 @@ namespace EsoTech.MessageQueue.Testing
             return Task.CompletedTask;
         }
 
-        public async Task HandleNext(CancellationToken cancellation)
+        private ConcurrentDictionary<string, Func<object, CancellationToken, Task>[]> _failedHandlers = new ConcurrentDictionary<string, Func<object, CancellationToken, Task>[]>();
+        public async Task HandleNext(CancellationToken cancellationToken)
         {
             await Task.Run(async () =>
             {
-                var msg = Messages.Take(cancellation);
+                var msg = Messages.Take(cancellationToken);
 
-                if (cancellation.IsCancellationRequested)
-                    throw new TaskCanceledException();
+                cancellationToken.ThrowIfCancellationRequested();
 
-                var handlers = _handlers[msg.GetType()].ToList();
-
-                if (handlers.Any())
-                {
-                    foreach (var handler in handlers)
-                        await handler(msg, cancellation);
-                }
+                var messageId = msg!.Headers["MessageId"];
+                if (_failedHandlers.TryGetValue(messageId, out var handlers))
+                    _failedHandlers.Remove(messageId, out _);
                 else
-                    await HandleNext(cancellation);
+                    handlers = _handlers[msg!.Payload!.GetType()].ToArray();
+
+                if (!handlers.Any())
+                    await HandleNext(cancellationToken);
+
+                var handlerTasks = handlers.Select(h => h(msg.Payload!, cancellationToken)).ToList();
+                try
+                {
+                    await Task.WhenAll(handlerTasks);
+                }
+                catch
+                {
+                    _failedHandlers[msg.Headers["MessageId"]] = handlers.Zip(
+                        handlerTasks, (handler, handlerTask) => new { Handler = handler, HandlerTask = handlerTask }
+                    ).Where(kvp => kvp.HandlerTask.IsFaulted)
+                    .Select(kvp => kvp.Handler)
+                    .ToArray();
+                    throw;
+                }
             });
         }
 
@@ -138,13 +153,29 @@ namespace EsoTech.MessageQueue.Testing
         {
             if (Messages.TryTake(out var msg))
             {
-                var handlers = _handlers[msg!.GetType()].ToList();
+                var messageId = msg!.Headers["MessageId"];
+                if (_failedHandlers.TryGetValue(messageId, out var handlers))
+                    _failedHandlers.Remove(messageId, out _);
+                else
+                    handlers = _handlers[msg!.Payload!.GetType()].ToArray();
 
                 if (!handlers.Any())
                     return await TryHandleNext(cancellationToken);
 
-                foreach (var handler in handlers)
-                    await handler(msg, cancellationToken);
+                var handlerTasks = handlers.Select(h => h(msg.Payload!, cancellationToken)).ToList();
+                try
+                {
+                    await Task.WhenAll(handlerTasks);
+                }
+                catch
+                {
+                    _failedHandlers[msg.Headers["MessageId"]] = handlers.Zip(
+                        handlerTasks, (handler, handlerTask) => new { Handler = handler, HandlerTask = handlerTask }
+                    ).Where(kvp => kvp.HandlerTask.IsFaulted)
+                    .Select(kvp => kvp.Handler)
+                    .ToArray();
+                    throw;
+                }
 
                 return true;
             }
@@ -159,31 +190,6 @@ namespace EsoTech.MessageQueue.Testing
                 times++;
 
             return times;
-        }
-
-        public async Task ProcessOnlyCurrentMessages()
-        {
-            await ProcessCurrentUntilFirstOfType<FakeMessageQueue>();
-        }
-
-        public async Task<bool> ProcessCurrentUntilFirstOfType<T>() where T : class
-        {
-            var currentMessagesCount = Messages.Count;
-            for (var idx = 0; idx < currentMessagesCount; idx++)
-            {
-                var hasTargetType = Messages.FirstOrDefault() is T;
-                if (hasTargetType) return true;
-
-                if (Messages.TryTake(out var msg))
-                {
-                    var handlers = _handlers[msg!.GetType()].ToList();
-
-                    foreach (var handler in handlers)
-                        await handler(msg, default);
-                }
-            }
-
-            return false;
         }
 
         public ValueTask DisposeAsync() => default;

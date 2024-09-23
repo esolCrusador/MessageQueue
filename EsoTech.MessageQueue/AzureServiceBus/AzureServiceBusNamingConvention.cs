@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,11 +13,10 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         private readonly HashFunction _hashFunction;
         private readonly Dictionary<string, string> _serviceNamesRemap;
 
-        public AzureServiceBusNamingConvention(HashFunction hashFunction, IConfiguration configuration)
+        public AzureServiceBusNamingConvention(HashFunction hashFunction, IOptions<AzureServiceBusConfiguration> configuration)
         {
             _hashFunction = hashFunction;
-            _serviceNamesRemap = new Dictionary<string, string>();
-            configuration.GetSection("AzureServiceBusNames").Bind(_serviceNamesRemap, opt => opt.ErrorOnUnknownConfiguration = true);
+            _serviceNamesRemap = configuration.Value.ServicesRemap;
         }
 
         public string GetSubscriptionName(Type messageType, Type handlerType)

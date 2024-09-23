@@ -2,11 +2,13 @@ using Azure.Messaging.ServiceBus;
 using EsoTech.MessageQueue.Abstractions;
 using EsoTech.MessageQueue.Serialization;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using OpenTracing;
 using OpenTracing.Propagation;
 using OpenTracing.Tag;
 using Prometheus;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reactive;
@@ -53,7 +55,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         private readonly MessageSerializer _messageSerializer;
         private readonly AzureServiceBusManager _azureServiceBusManager;
         private readonly ILogger<AzureServiceBusConsumer> _logger;
-
+        private readonly ConcurrentDictionary<string, HandlerByMessageTypeEntry[]> _notHandledMessages = new ConcurrentDictionary<string, HandlerByMessageTypeEntry[]>();
         private IList<ServiceBusProcessor>? _processors;
         private bool _initialized = false;
 
@@ -63,7 +65,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             IEnumerable<IEventMessageHandler> eventHandlers,
             IEnumerable<ICommandMessageHandler> commandHandlers,
             TracerFactory? tracerFactory,
-            MessageQueueConfiguration messageQueueConfiguration,
+            IOptions<MessageQueueConfiguration> messageQueueConfiguration,
             AzureServiceBusNamingConvention namingConvention,
             AzureServiceBusClientHolder serviceBusClientHolder,
             MessageSerializer messageSerializer,
@@ -73,7 +75,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             _eventHandlers = eventHandlers;
             _commandHandlers = commandHandlers;
             _tracerFactory = tracerFactory;
-            _messageQueueConfiguration = messageQueueConfiguration;
+            _messageQueueConfiguration = messageQueueConfiguration.Value;
             _serviceBusClient = serviceBusClientHolder.Instance;
             _namingConvention = namingConvention;
             _messageSerializer = messageSerializer;
@@ -90,7 +92,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         public AzureServiceBusConsumer(
             IEnumerable<IEventMessageHandler> eventHandlers,
             IEnumerable<ICommandMessageHandler> commandHandlers,
-            MessageQueueConfiguration messageQueueConfiguration,
+            IOptions<MessageQueueConfiguration> messageQueueConfiguration,
             AzureServiceBusNamingConvention namingConvention,
             AzureServiceBusClientHolder serviceBusClientHolder,
             MessageSerializer messageSerializer,
@@ -250,7 +252,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                 var queueName = group.Key;
 
                 await _azureServiceBusManager.UpdateQueue(queueName);
-                _logger.LogInformation("Subscribing to topic {TopicName}", queueName);
+                _logger.LogInformation("Subscribing to queue {QueueName}", queueName);
 
                 var processor = _serviceBusClient.CreateProcessor(queueName,
                     new ServiceBusProcessorOptions
@@ -291,7 +293,9 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 
             try
             {
-                if (!handlersByMessageType.TryGetValue(payloadType, out var handlers))
+                if (args.Message.DeliveryCount > 0 && _notHandledMessages.TryGetValue(args.Message.MessageId, out var handlers))
+                    _notHandledMessages.Remove(args.Message.MessageId, out _);
+                else if (!handlersByMessageType.TryGetValue(payloadType, out handlers))
                 {
                     _logger.LogError("Processed message with no handlers, subscription filters are not set up properly: {Sequence}, {PayloadType}, {MessageBody}.",
                         args.Message.EnqueuedSequenceNumber, payloadType, serializedMessage);
@@ -308,16 +312,15 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                     payloadType,
                     serializedMessage);
 
-                using var cancellationTokenSource = new CancellationTokenSource(_messageQueueConfiguration.AckTimeoutMilliseconds);
                 using (MessagesDurations.WithLabels(eventName, topicName).NewTimer())
                 {
-                    foreach (var handlerInfo in handlers)
+                    var handlerTasks = handlers.Select(async handlerInfo =>
                     {
                         if (Tracer == null)
                         {
-                            await handlerInfo.Handle.Value(message.Payload, cancellationTokenSource.Token);
+                            await handlerInfo.Handle.Value(message.Payload, args.CancellationToken);
 
-                            continue;
+                            return;
                         }
 
                         var msgType = message.Payload.GetType().Name;
@@ -335,7 +338,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 
                                 try
                                 {
-                                    await handlerInfo.Handle.Value(message.Payload, cancellationTokenSource.Token);
+                                    await handlerInfo.Handle.Value(message.Payload, args.CancellationToken);
                                 }
                                 catch (Exception e)
                                 {
@@ -354,6 +357,21 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                         {
                             Tracer.ScopeManager.Activate(currentActive, true);
                         }
+                    }).ToList();
+
+                    try
+                    {
+                        await Task.WhenAll(handlerTasks);
+                    }
+                    catch
+                    {
+                        _notHandledMessages[args.Message.MessageId] =
+                            handlers.Zip(handlerTasks, (mh, handlerTask) => new KeyValuePair<HandlerByMessageTypeEntry, Task>(mh, handlerTask))
+                                .Where(kvp => kvp.Value.IsFaulted)
+                                .Select(kvp => kvp.Key)
+                                .ToArray();
+
+                        throw;
                     }
                 }
 
@@ -365,7 +383,6 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             catch (Exception ex)
             {
                 _logger.LogError(ex, "ProcessMessage error");
-
                 FailedMessages.WithLabels(eventName, topicName).Inc();
             }
         }
