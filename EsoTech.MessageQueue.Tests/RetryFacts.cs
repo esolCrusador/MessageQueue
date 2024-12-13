@@ -92,18 +92,19 @@ namespace EsoTech.MessageQueue.Tests
         [Fact]
         public async Task Should_Handle_By_Only_Failed_Handler()
         {
+            var text = Guid.NewGuid().ToString("n");
             _fooDelegateHandler.Handler = (_, _) => Task.FromException(new Exception());
-            await _queue.SendEvent(new FooMsg { Text = "123" });
+            await _queue.SendEvent(new FooMsg { Text = text });
             using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(1)))
                 (await _subscriber.TryHandleNext(cancellation.Token)).Should().BeFalse();
 
-            _fooHandler.Log.Should().BeEquivalentTo(new[] { new FooMsg { Text = "123" } });
+            _fooHandler.Log.Should().BeEquivalentTo(new[] { new FooMsg { Text = text } });
             _fooDelegateHandler.Log.Should().BeEmpty();
 
             _fooDelegateHandler.ResetHandler();
             (await _subscriber.TryHandleNext()).Should().BeTrue();
-            _fooDelegateHandler.Log.Should().BeEquivalentTo(new[] { new FooMsg { Text = "123" } });
-            _fooHandler.Log.Should().BeEquivalentTo(new[] { new FooMsg { Text = "123" } });
+            _fooDelegateHandler.Log.Should().BeEquivalentTo(new[] { new FooMsg { Text = text } });
+            _fooHandler.Log.Should().BeEquivalentTo(new[] { new FooMsg { Text = text } });
         }
 
         [Fact]

@@ -10,6 +10,7 @@ using Prometheus;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Linq;
@@ -111,6 +112,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 
         public async Task Initialize(CancellationToken cancellation)
         {
+            var sw = Stopwatch.StartNew();
             _logger.LogInformation("Initializing service bus consumer.");
             const string methodName = "Handle";
 
@@ -150,7 +152,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             _processors = eventProcessors.Concat(commandProcessors).ToList();
             _initialized = true;
 
-            _logger.LogInformation("Message queue initialized.");
+            _logger.LogInformation("Message queue initialized. {Milliseconds} milliseconds", sw.ElapsedMilliseconds);
         }
 
         public Task HandleNext(CancellationToken cancellation)
