@@ -371,6 +371,9 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 
         private async Task ExecuteHandler(ProcessMessageEventArgs args, Message message, string serializedMessage, HandlerByMessageTypeEntry handlerInfo)
         {
+            if (message.Payload == null)
+                throw new ArgumentException("Null message payload");
+
             if (Tracer == null)
             {
                 await handlerInfo.Handle.Value(message.Payload, args.CancellationToken);
@@ -414,12 +417,12 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             }
         }
 
-        private Task ProcessError(ProcessErrorEventArgs args)
+        private async Task ProcessError(ProcessErrorEventArgs args)
         {
-            _logger.LogError(args.Exception,
-                "Error while processing messages from {SubscriptionName}, source: {ErrorSource}", args.EntityPath, args.ErrorSource);
+            _logger.LogError(args.Exception, "Error while processing messages from {SubscriptionName}, source: {ErrorSource}", args.EntityPath, args.ErrorSource);
 
-            return Task.CompletedTask;
+            if (args.Exception.IsNotFound())
+                await _azureServiceBusManager.Reset();
         }
 
 
