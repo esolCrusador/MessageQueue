@@ -16,6 +16,7 @@ using System.Reactive;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Reactive.Threading.Tasks;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -23,6 +24,8 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 {
     internal sealed class AzureServiceBusConsumer : IMessageConsumer
     {
+        private static readonly NoopDisposable _defaultDisposable = new NoopDisposable();
+
         private Subject<Unit> _handled = new Subject<Unit>();
         private static readonly Counter ExecutedMessages =
             Metrics.CreateCounter("service_bus_executed_messages_amount", "Currently executed amount of messages", "event_name", "queue_name");
@@ -124,6 +127,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                     var interfaces = type.GetInterfaces()
                         .Where(t => t.Name == interfaceName)
                         .ToList();
+                    var longRunningInterface = typeof(ILongRunningHandler<>).Name;
 
                     _logger.LogInformation(
                         $"Message handler: {type.FullName} targets: {string.Join(",", interfaces.Select(x => x.GenericTypeArguments[0]))}");
@@ -374,6 +378,23 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             if (message.Payload == null)
                 throw new ArgumentException("Null message payload");
 
+            DateTimeOffset started = DateTimeOffset.UtcNow;
+            //using IDisposable resumeTimer = handlerInfo.Timeout.HasValue ?
+            //    Observable.Interval(_messageQueueConfiguration.ResumeLockPeriod)
+            //        .Timeout(handlerInfo.Timeout.Value)
+            //        .Select(_ =>
+            //        {
+            //            return Observable.FromAsync(async cancellation =>
+            //            {
+            //                var passed = DateTimeOffset.UtcNow - started;
+
+            //                await args.RenewMessageLockAsync(args.Message, cancellation);
+            //            });
+            //        })
+            //        .Concat()
+            //        .Subscribe()
+            //    : _defaultDisposable;
+
             if (Tracer == null)
             {
                 await handlerInfo.Handle.Value(message.Payload, args.CancellationToken);
@@ -429,11 +450,17 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 
         private class HandlerByMessageTypeEntry
         {
+            private static MethodInfo _getGenericTimeoutMethod;
+
             public Type MessageType { get; }
-
+            public TimeSpan? Timeout { get; }
             public Lazy<Func<object, CancellationToken, Task>> Handle { get; }
-
             public Type HandlerType { get; }
+
+            static HandlerByMessageTypeEntry()
+            {
+                _getGenericTimeoutMethod = typeof(HandlerByMessageTypeEntry).GetMethod(nameof(GetGenericTimeout), BindingFlags.NonPublic | BindingFlags.Static);
+            }
 
             public HandlerByMessageTypeEntry(object instance, Type interfaceType, string methodName)
             {
@@ -441,8 +468,26 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                 Handle = new Lazy<Func<object, CancellationToken, Task>>(
                     () => HandlerExtensions.CreateHandleDelegate(instance, interfaceType, methodName)
                 );
+                Timeout = GetTimeout(MessageType, instance);
                 HandlerType = instance.GetType();
             }
+
+            private static TimeSpan? GetTimeout(Type messageType, object instance)
+            {
+                return (TimeSpan?)_getGenericTimeoutMethod.MakeGenericMethod(messageType).Invoke(null, new[] { instance });
+
+            }
+            private static TimeSpan? GetGenericTimeout<TEntity>(object instance)
+            {
+                if (instance is ILongRunningHandler<TEntity> longRunning)
+                    return longRunning.Timeout;
+                return null;
+            }
+        }
+
+        private class NoopDisposable : IDisposable
+        {
+            public void Dispose() { }
         }
     }
 }
