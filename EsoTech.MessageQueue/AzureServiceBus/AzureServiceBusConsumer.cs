@@ -378,22 +378,14 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             if (message.Payload == null)
                 throw new ArgumentException("Null message payload");
 
-            DateTimeOffset started = DateTimeOffset.UtcNow;
-            //using IDisposable resumeTimer = handlerInfo.Timeout.HasValue ?
-            //    Observable.Interval(_messageQueueConfiguration.ResumeLockPeriod)
-            //        .Timeout(handlerInfo.Timeout.Value)
-            //        .Select(_ =>
-            //        {
-            //            return Observable.FromAsync(async cancellation =>
-            //            {
-            //                var passed = DateTimeOffset.UtcNow - started;
-
-            //                await args.RenewMessageLockAsync(args.Message, cancellation);
-            //            });
-            //        })
-            //        .Concat()
-            //        .Subscribe()
-            //    : _defaultDisposable;
+            var timeout = handlerInfo.GetTimeout.Value?.Invoke(message.Payload);
+            using IDisposable resumeTimer = timeout.HasValue
+                ? Observable.Interval(_messageQueueConfiguration.ResumeLockPeriod)
+                    .Timeout(timeout.Value)
+                    .Select(_ => Observable.FromAsync(cancellation => args.RenewMessageLockAsync(args.Message, cancellation)))
+                    .Concat()
+                    .Subscribe()
+                : _defaultDisposable;
 
             if (Tracer == null)
             {
@@ -450,17 +442,10 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 
         private class HandlerByMessageTypeEntry
         {
-            private static MethodInfo _getGenericTimeoutMethod;
-
             public Type MessageType { get; }
-            public TimeSpan? Timeout { get; }
+            public Lazy<Func<object, TimeSpan?>?> GetTimeout { get; }
             public Lazy<Func<object, CancellationToken, Task>> Handle { get; }
             public Type HandlerType { get; }
-
-            static HandlerByMessageTypeEntry()
-            {
-                _getGenericTimeoutMethod = typeof(HandlerByMessageTypeEntry).GetMethod(nameof(GetGenericTimeout), BindingFlags.NonPublic | BindingFlags.Static);
-            }
 
             public HandlerByMessageTypeEntry(object instance, Type interfaceType, string methodName)
             {
@@ -468,20 +453,10 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                 Handle = new Lazy<Func<object, CancellationToken, Task>>(
                     () => HandlerExtensions.CreateHandleDelegate(instance, interfaceType, methodName)
                 );
-                Timeout = GetTimeout(MessageType, instance);
+                GetTimeout = new Lazy<Func<object, TimeSpan?>?>(
+                    () => HandlerExtensions.CreateGetTimeoutDelegate(instance, MessageType)
+                );
                 HandlerType = instance.GetType();
-            }
-
-            private static TimeSpan? GetTimeout(Type messageType, object instance)
-            {
-                return (TimeSpan?)_getGenericTimeoutMethod.MakeGenericMethod(messageType).Invoke(null, new[] { instance });
-
-            }
-            private static TimeSpan? GetGenericTimeout<TEntity>(object instance)
-            {
-                if (instance is ILongRunningHandler<TEntity> longRunning)
-                    return longRunning.Timeout;
-                return null;
             }
         }
 

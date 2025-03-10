@@ -69,18 +69,18 @@ namespace EsoTech.MessageQueue.Tests
             //    await (_azureServiceBusManager ?? throw new Exception("No manager")).PurgeAll();
             //}
 
-            //[Fact]
-            //public async Task Should_Continue_Handling_For_Long_Running_Task()
-            //{
-            //    var _fooLongRuningEventDelegateHandler = _serviceProvider.GetRequiredService<GenericLongRuningEventDelegateHandler<LongRunningMessage>>();
-            //    _fooLongRuningEventDelegateHandler.Handler = async (msg, cancellation) =>
-            //        await Task.Delay(TimeSpan.FromSeconds(45), cancellation);
+            [Fact]
+            public async Task Should_Continue_Handling_For_Long_Running_Task()
+            {
+                var _fooLongRuningEventDelegateHandler = _serviceProvider.GetRequiredService<GenericLongRuningEventDelegateHandler<LongRunningMessage>>();
+                _fooLongRuningEventDelegateHandler.Handler = async (msg, cancellation) =>
+                    await Task.Delay(TimeSpan.FromSeconds(45), cancellation);
 
-            //    await _queue.SendEvent(new LongRunningMessage());
+                await _queue.SendEvent(new LongRunningMessage());
 
-            //    using var cs = new CancellationTokenSource(TimeSpan.FromSeconds(50));
-            //    (await _subscriber.TryHandleNext(cs.Token)).Should().BeTrue();
-            //}
+                using var cs = new CancellationTokenSource(TimeSpan.FromSeconds(50));
+                (await _subscriber.TryHandleNext(cs.Token)).Should().BeTrue();
+            }
         }
 
         private EventMessageQueueFacts(IServiceProvider serviceProvider)

@@ -13,8 +13,6 @@ namespace EsoTech.MessageQueue.Tests.EventHandlers
 
         public IReadOnlyList<TMessage> Log => _log;
 
-        public TimeSpan Timeout => TimeSpan.FromSeconds(70);
-
         public Func<TMessage, CancellationToken, Task> Handler = DefaultHandler;
 
         public async Task Handle(TMessage eventMessage, CancellationToken cancellationToken)
@@ -24,5 +22,7 @@ namespace EsoTech.MessageQueue.Tests.EventHandlers
         }
 
         public void ResetHandler() => Handler = DefaultHandler;
+
+        public TimeSpan GetTimeout(TMessage message) => TimeSpan.FromSeconds(55);
     }
 }
