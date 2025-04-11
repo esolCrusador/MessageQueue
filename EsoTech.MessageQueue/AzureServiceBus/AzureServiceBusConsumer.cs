@@ -18,6 +18,7 @@ using System.Reactive;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Reactive.Threading.Tasks;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -25,6 +26,8 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 {
     internal sealed class AzureServiceBusConsumer : IMessageConsumer
     {
+        private static readonly NoopDisposable _defaultDisposable = new NoopDisposable();
+
         private Subject<Unit> _handled = new Subject<Unit>();
         private static readonly Counter ExecutedMessages =
             Metrics.CreateCounter("service_bus_executed_messages_amount", "Currently executed amount of messages", "event_name", "queue_name");
@@ -126,6 +129,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                     var interfaces = type.GetInterfaces()
                         .Where(t => t.Name == interfaceName)
                         .ToList();
+                    var longRunningInterface = typeof(ILongRunningHandler<>).Name;
 
                     _logger.LogInformation(
                         $"Message handler: {type.FullName} targets: {string.Join(",", interfaces.Select(x => x.GenericTypeArguments[0]))}");
@@ -376,6 +380,15 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             if (message.Payload == null)
                 throw new ArgumentException("Null message payload");
 
+            var timeout = handlerInfo.GetTimeout.Value?.Invoke(message.Payload);
+            using IDisposable resumeTimer = timeout.HasValue
+                ? Observable.Interval(_messageQueueConfiguration.ResumeLockPeriod)
+                    .Timeout(timeout.Value)
+                    .Select(_ => Observable.FromAsync(cancellation => args.RenewMessageLockAsync(args.Message, cancellation)))
+                    .Concat()
+                    .Subscribe()
+                : _defaultDisposable;
+
             if (Tracer == null)
             {
                 await handlerInfo.Handle.Value(message.Payload, args.CancellationToken);
@@ -432,9 +445,8 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         private class HandlerByMessageTypeEntry
         {
             public Type MessageType { get; }
-
+            public Lazy<Func<object, TimeSpan?>?> GetTimeout { get; }
             public Lazy<Func<object, CancellationToken, Task>> Handle { get; }
-
             public Type HandlerType { get; }
 
             public HandlerByMessageTypeEntry(object instance, Type interfaceType, string methodName)
@@ -443,8 +455,16 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                 Handle = new Lazy<Func<object, CancellationToken, Task>>(
                     () => HandlerExtensions.CreateHandleDelegate(instance, interfaceType, methodName)
                 );
+                GetTimeout = new Lazy<Func<object, TimeSpan?>?>(
+                    () => HandlerExtensions.CreateGetTimeoutDelegate(instance, MessageType)
+                );
                 HandlerType = instance.GetType();
             }
+        }
+
+        private class NoopDisposable : IDisposable
+        {
+            public void Dispose() { }
         }
     }
 }

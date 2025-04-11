@@ -53,6 +53,7 @@ namespace EsoTech.MessageQueue.Tests
                 .AddEventMessageHandler<BarEventHandler>()
                 .AddEventMessageHandler<MultiEventHandler1>()
                 .AddEventMessageHandler<MultiEventHandler2>()
+                .AddEventMessageHandler<GenericLongRuningEventDelegateHandler<LongRunningMessage>>()
                 .SuppressContinuousPolling()
                 .AddMessageQueue()
                 .AddAzureServiceBusMessageQueue(opts => opts.ConnectionStringName = "TestServiceBusConnectionString")
@@ -67,11 +68,24 @@ namespace EsoTech.MessageQueue.Tests
             //{
             //    await (_azureServiceBusManager ?? throw new Exception("No manager")).PurgeAll();
             //}
+
+            [Fact]
+            public async Task Should_Continue_Handling_For_Long_Running_Task()
+            {
+                var _fooLongRuningEventDelegateHandler = _serviceProvider.GetRequiredService<GenericLongRuningEventDelegateHandler<LongRunningMessage>>();
+                _fooLongRuningEventDelegateHandler.Handler = async (msg, cancellation) =>
+                    await Task.Delay(TimeSpan.FromSeconds(45), cancellation);
+
+                await _queue.SendEvent(new LongRunningMessage());
+
+                using var cs = new CancellationTokenSource(TimeSpan.FromSeconds(50));
+                (await _subscriber.TryHandleNext(cs.Token)).Should().BeTrue();
+            }
         }
 
         private EventMessageQueueFacts(IServiceProvider serviceProvider)
         {
-            _serviceProvier = serviceProvider;
+            _serviceProvider = serviceProvider;
 
             _subscriber = serviceProvider.GetRequiredService<IMessageConsumer>();
             _queue = serviceProvider.GetRequiredService<IMessageQueue>();
@@ -86,8 +100,8 @@ namespace EsoTech.MessageQueue.Tests
 
         public async Task InitializeAsync()
         {
-            if (_serviceProvier.GetService<FakeMessageQueueInitializer>() == null)
-                await _serviceProvier.GetRequiredService<IMessageConsumer>().Initialize(default);
+            if (_serviceProvider.GetService<FakeMessageQueueInitializer>() == null)
+                await _serviceProvider.GetRequiredService<IMessageConsumer>().Initialize(default);
         }
 
         public async Task DisposeAsync()
@@ -98,7 +112,7 @@ namespace EsoTech.MessageQueue.Tests
             await _subscriber.DisposeAsync();
         }
 
-        private readonly IServiceProvider _serviceProvier;
+        protected readonly IServiceProvider _serviceProvider;
 
         private readonly IMessageConsumer _subscriber;
         private readonly IMessageQueue _queue;
@@ -113,6 +127,9 @@ namespace EsoTech.MessageQueue.Tests
 
         private readonly MultiEventHandler2 _handler2;
         private readonly AzureServiceBusManager? _azureServiceBusManager;
+        private class LongRunningMessage
+        {
+        }
 
         [Fact]
         public async Task Send_Should_Not_Invoke_Handlers()

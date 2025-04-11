@@ -26,5 +26,21 @@ namespace EsoTech.MessageQueue.Abstractions
                 cancellationTokenParameter
             ).Compile();
         }
+
+        public static Func<object, TimeSpan?>? CreateGetTimeoutDelegate(object instance, Type messageType)
+        {
+            var interfaceType = typeof(ILongRunningHandler<>).MakeGenericType(messageType);
+            if (!interfaceType.IsAssignableFrom(instance.GetType()))
+                return null;
+
+            var messageParameter = Expression.Parameter(typeof(object), "message");
+            var method = interfaceType.GetMethod("GetTimeout");
+
+            return Expression.Lambda<Func<object, TimeSpan?>>(Expression.Call(
+                Expression.Convert(Expression.Constant(instance), interfaceType),
+                method,
+                Expression.Convert(messageParameter, messageType)
+             ), messageParameter).Compile();
+        }
     }
 }
