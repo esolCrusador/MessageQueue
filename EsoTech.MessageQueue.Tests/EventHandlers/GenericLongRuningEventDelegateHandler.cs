@@ -23,6 +23,6 @@ namespace EsoTech.MessageQueue.Tests.EventHandlers
 
         public void ResetHandler() => Handler = DefaultHandler;
 
-        public TimeSpan GetTimeout(TMessage message) => TimeSpan.FromSeconds(55);
+        public TimeSpan? GetTimeout(TMessage message) => TimeSpan.FromSeconds(55);
     }
 }
