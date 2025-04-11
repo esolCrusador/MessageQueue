@@ -4,7 +4,7 @@ using System.Reactive;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 
-namespace EsoTech.MessageQueue
+namespace EsoTech.MessageQueue.Extensions
 {
     internal static class ObservableExtensions
     {

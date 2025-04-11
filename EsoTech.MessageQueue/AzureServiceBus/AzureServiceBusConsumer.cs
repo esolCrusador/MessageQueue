@@ -1,11 +1,13 @@
 using Azure.Messaging.ServiceBus;
 using EsoTech.MessageQueue.Abstractions;
+using EsoTech.MessageQueue.Extensions;
 using EsoTech.MessageQueue.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenTracing;
 using OpenTracing.Propagation;
 using OpenTracing.Tag;
+using Polly.Utilities;
 using Prometheus;
 using System;
 using System.Collections.Concurrent;
@@ -344,9 +346,9 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                         {
                             var ex = handlerTasks.Single(ht => ht.Value.IsFaulted).Value.Exception;
                             if (ex.InnerExceptions.Count == 1)
-                                throw ex.InnerExceptions[0];
+                                ex.InnerExceptions[0].Rethrow();
 
-                            throw ex;
+                            ex.Rethrow();
                         }
                         else
                         {
