@@ -1,4 +1,5 @@
 ﻿using EsoTech.MessageQueue.Abstractions;
+using EsoTech.MessageQueue.AzureServicebus;
 using EsoTech.MessageQueue.AzureServiceBus;
 using EsoTech.MessageQueue.Testing;
 using EsoTech.MessageQueue.Tests.EventHandlers;
@@ -7,8 +8,6 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System;
-using System.Diagnostics;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
@@ -24,33 +23,14 @@ namespace EsoTech.MessageQueue.Tests
         private readonly AzureServiceBusManager? _azureServiceBusManager;
         private readonly IMessageQueue _queue;
 
-        //[Trait("Category", "Fast")]
-        //public sealed class Fast : RetryFacts
-        //{
-        //    public Fast() : base(CreateServiceProvider())
-        //    {
-        //    }
-
-        //    public static ServiceProvider CreateServiceProvider()
-        //    {
-        //        var serviceCollection = ConfigureCommonServices(new ServiceCollection());
-        //        serviceCollection.AddFakeMessageQueue();
-
-        //        var serviceProvider = serviceCollection.BuildServiceProvider();
-
-        //        return serviceProvider;
-        //    }
-        //}
-
         [Trait("Category", "Slow")]
-        public sealed class Slow : RetryFacts
+        public sealed class SlowAzureServiceBus : RetryFacts
         {
-            public Slow() : base(ConfigureCommonServices(new ServiceCollection())
+            public SlowAzureServiceBus() : base(new ServiceCollection()
                 .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddEnvironmentVariables().Build())
                 .SuppressContinuousPolling()
                 .AddMessageQueue(opts => opts.AckTimeout = TimeSpan.FromSeconds(1))
                 .AddAzureServiceBusMessageQueue(opts => opts.ConnectionStringName = "TestServiceBusConnectionString")
-                .BuildServiceProvider()
             )
             {
             }
@@ -63,8 +43,10 @@ namespace EsoTech.MessageQueue.Tests
                     .AddEventMessageHandler<FooEventHandler>();
         }
 
-        private RetryFacts(ServiceProvider serviceProvider)
+        private RetryFacts(IServiceCollection services)
         {
+            ConfigureCommonServices(services);
+            var serviceProvider = services.BuildServiceProvider();
             _serviceProvier = serviceProvider;
 
             _subscriber = serviceProvider.GetRequiredService<IMessageConsumer>();

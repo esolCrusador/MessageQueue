@@ -12,6 +12,8 @@ using System.Threading;
 using EsoTech.MessageQueue.Tests.EventHandlers;
 using EsoTech.MessageQueue.AzureServiceBus;
 using System.Collections.Generic;
+using EsoTech.MessageQueue.AzureServicebus;
+using EsoTech.MessageQueue.RabbitMQ;
 
 namespace EsoTech.MessageQueue.Tests
 {
@@ -24,40 +26,37 @@ namespace EsoTech.MessageQueue.Tests
             {
             }
 
-            public static IServiceProvider CreateServiceProvider()
+            public static IServiceCollection CreateServiceProvider()
             {
-                var serviceCollection = new ServiceCollection()
-                    .AddLogging()
-                    .AddSingleton<FooEventHandler>().AddSingleton<IEventMessageHandler>(ctx => ctx.GetRequiredService<FooEventHandler>())
-                    .AddSingleton<EnvelopedFooEventHandler>().AddSingleton<IEventMessageHandler>(ctx => ctx.GetRequiredService<EnvelopedFooEventHandler>())
-                    .AddSingleton<BarEventHandler>().AddSingleton<IEventMessageHandler>(ctx => ctx.GetRequiredService<BarEventHandler>())
-                    .AddEventMessageHandler<MultiEventHandler1>()
-                    .AddEventMessageHandler<MultiEventHandler2>();
+                var serviceCollection = new ServiceCollection();
 
                 serviceCollection.AddFakeMessageQueue();
 
-                var serviceProvider = serviceCollection.BuildServiceProvider();
+                return serviceCollection;
+            }
 
-                return serviceProvider;
+            [Fact]
+            public async Task TryHandleNext_Should_Invoke_Appropriate_Handler_With_Delay()
+            {
+                var msg = new FooDelayedMessage { Text = "some text" };
+
+                await _queue.SendEvent(msg, TimeSpan.FromSeconds(1));
+                await Task.Delay(TimeSpan.FromSeconds(2));
+                (await _subscriber.TryHandleNext()).Should().BeTrue();
+
+                _fooHandler.DelayedLog.Single().Text.Should().Be(msg.Text);
             }
         }
 
         [Trait("Category", "Slow")]
-        public sealed class Slow : EventMessageQueueFacts
+        public sealed class SlowAzureServiceBus : EventMessageQueueFacts
         {
-            public Slow() : base(new ServiceCollection()
-                .AddLogging()
+            public SlowAzureServiceBus() : base(new ServiceCollection()
                 .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddEnvironmentVariables().Build())
-                .AddEventMessageHandler<FooEventHandler>()
-                .AddEventMessageHandler<EnvelopedFooEventHandler>()
-                .AddEventMessageHandler<BarEventHandler>()
-                .AddEventMessageHandler<MultiEventHandler1>()
-                .AddEventMessageHandler<MultiEventHandler2>()
                 .AddEventMessageHandler<GenericLongRuningEventDelegateHandler<LongRunningMessage>>()
                 .SuppressContinuousPolling()
                 .AddMessageQueue()
                 .AddAzureServiceBusMessageQueue(opts => opts.ConnectionStringName = "TestServiceBusConnectionString")
-                .BuildServiceProvider()
             )
             {
             }
@@ -70,10 +69,22 @@ namespace EsoTech.MessageQueue.Tests
             //}
 
             [Fact]
+            public async Task TryHandleNext_Should_Invoke_Appropriate_Handler_With_Delay()
+            {
+                var msg = new FooDelayedMessage { Text = "some text" };
+
+                await _queue.SendEvent(msg, TimeSpan.FromSeconds(1));
+                await Task.Delay(TimeSpan.FromSeconds(2));
+                (await _subscriber.TryHandleNext()).Should().BeTrue();
+
+                _fooHandler.DelayedLog.Single().Text.Should().Be(msg.Text);
+            }
+
+            [Fact]
             public async Task Should_Continue_Handling_For_Long_Running_Task()
             {
-                var _fooLongRuningEventDelegateHandler = _serviceProvider.GetRequiredService<GenericLongRuningEventDelegateHandler<LongRunningMessage>>();
-                _fooLongRuningEventDelegateHandler.Handler = async (msg, cancellation) =>
+                var fooLongRuningEventDelegateHandler = _serviceProvider.GetRequiredService<GenericLongRuningEventDelegateHandler<LongRunningMessage>>();
+                fooLongRuningEventDelegateHandler.Handler = async (msg, cancellation) =>
                     await Task.Delay(TimeSpan.FromSeconds(45), cancellation);
 
                 await _queue.SendEvent(new LongRunningMessage());
@@ -83,8 +94,44 @@ namespace EsoTech.MessageQueue.Tests
             }
         }
 
-        private EventMessageQueueFacts(IServiceProvider serviceProvider)
+        [Trait("Category", "Slow")]
+        [Collection(nameof(RabbitMqCollectionCollection))]
+        public sealed class SlowRabbit : EventMessageQueueFacts
         {
+            public SlowRabbit(RabbitMqTestFixture rabbitMqTestFixture) : base(new ServiceCollection()
+                .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddEnvironmentVariables().Build())
+                .AddEventMessageHandler<GenericLongRuningEventDelegateHandler<LongRunningMessage>>()
+                .SuppressContinuousPolling()
+                .AddMessageQueue()
+                .AddRabbitMq(rabbitMqTestFixture.Configure)
+            )
+            {
+            }
+
+            [Fact]
+            public async Task Should_Continue_Handling_For_Long_Running_Task()
+            {
+                var fooLongRuningEventDelegateHandler = _serviceProvider.GetRequiredService<GenericLongRuningEventDelegateHandler<LongRunningMessage>>();
+                fooLongRuningEventDelegateHandler.Handler = async (msg, cancellation) =>
+                    await Task.Delay(TimeSpan.FromSeconds(45), cancellation);
+
+                await _queue.SendEvent(new LongRunningMessage());
+
+                using var cs = new CancellationTokenSource(TimeSpan.FromSeconds(50));
+                (await _subscriber.TryHandleNext(cs.Token)).Should().BeTrue();
+            }
+        }
+
+        private EventMessageQueueFacts(IServiceCollection services)
+        {
+            services.AddLogging()
+                    .AddEventMessageHandler<FooEventHandler>()
+                    .AddEventMessageHandler<EnvelopedFooEventHandler>()
+                    .AddEventMessageHandler<BarEventHandler>()
+                    .AddEventMessageHandler<MultiEventHandler1>()
+                    .AddEventMessageHandler<MultiEventHandler2>();
+
+            var serviceProvider = services.BuildServiceProvider();
             _serviceProvider = serviceProvider;
 
             _subscriber = serviceProvider.GetRequiredService<IMessageConsumer>();
@@ -192,18 +239,6 @@ namespace EsoTech.MessageQueue.Tests
             while (!await _subscriber.TryHandleNext()) { }
 
             _fooHandler.Log.Single().Text.Should().Be(msg.Text);
-        }
-
-        [Fact]
-        public async Task TryHandleNext_Should_Invoke_Appropriate_Handler_With_Delay()
-        {
-            var msg = new FooDelayedMessage { Text = "some text" };
-
-            await _queue.SendEvent(msg, TimeSpan.FromSeconds(1));
-            await Task.Delay(TimeSpan.FromSeconds(2));
-            (await _subscriber.TryHandleNext()).Should().BeTrue();
-
-            _fooHandler.DelayedLog.Single().Text.Should().Be(msg.Text);
         }
 
         [Fact]

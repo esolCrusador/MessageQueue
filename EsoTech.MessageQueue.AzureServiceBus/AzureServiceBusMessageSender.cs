@@ -1,5 +1,6 @@
 ﻿using Azure.Messaging.ServiceBus;
 using EsoTech.MessageQueue.Abstractions;
+using EsoTech.MessageQueue.AzureServiceBus;
 using EsoTech.MessageQueue.Serialization;
 using Microsoft.Extensions.Logging;
 using OpenTracing;
@@ -9,10 +10,9 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace EsoTech.MessageQueue.AzureServiceBus
+namespace EsoTech.MessageQueue.AzureServicebus
 {
     internal class AzureServiceBusMessageSender : IMessageQueue, IAsyncDisposable
     {

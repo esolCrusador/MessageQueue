@@ -3,13 +3,17 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.2.32616.157
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EsoTech.MessageQueue.Abstractions", "..\..\EsoTech.MessageQueue.Abstractions\EsoTech.MessageQueue.Abstractions.csproj", "{9E9E1CF5-878B-48AD-8F6A-D78F81731109}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EsoTech.MessageQueue.Abstractions", "EsoTech.MessageQueue.Abstractions\EsoTech.MessageQueue.Abstractions.csproj", "{9E9E1CF5-878B-48AD-8F6A-D78F81731109}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EsoTech.MessageQueue", "..\..\EsoTech.MessageQueue\EsoTech.MessageQueue.csproj", "{BDF72FF5-140E-4BD6-A82A-741F772E99A8}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EsoTech.MessageQueue", "EsoTech.MessageQueue\EsoTech.MessageQueue.csproj", "{BDF72FF5-140E-4BD6-A82A-741F772E99A8}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EsoTech.MessageQueue.Testing", "..\..\EsoTech.MessageQueue.Testing\EsoTech.MessageQueue.Testing.csproj", "{D8BD2813-D2A0-4767-8569-EC499B742905}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EsoTech.MessageQueue.Testing", "EsoTech.MessageQueue.Testing\EsoTech.MessageQueue.Testing.csproj", "{D8BD2813-D2A0-4767-8569-EC499B742905}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EsoTech.MessageQueue.Tests", "..\..\EsoTech.MessageQueue.Tests\EsoTech.MessageQueue.Tests.csproj", "{D3C3E271-E39B-4FAD-8AF6-FE1B807FDE4A}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EsoTech.MessageQueue.Tests", "EsoTech.MessageQueue.Tests\EsoTech.MessageQueue.Tests.csproj", "{D3C3E271-E39B-4FAD-8AF6-FE1B807FDE4A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EsoTech.MessageQueue.AzureServicebus", "EsoTech.MessageQueue.AzureServicebus\EsoTech.MessageQueue.AzureServicebus.csproj", "{0BF94CBA-421E-496F-8CC5-5FDA9E51F3D7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EsoTech.MessageQueue.RabbitMQ", "EsoTech.MessageQueue.RabbitMQ\EsoTech.MessageQueue.RabbitMQ.csproj", "{34A4B2B8-2822-4E49-BA59-782B49C785F2}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -33,6 +37,14 @@ Global
 		{D3C3E271-E39B-4FAD-8AF6-FE1B807FDE4A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D3C3E271-E39B-4FAD-8AF6-FE1B807FDE4A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D3C3E271-E39B-4FAD-8AF6-FE1B807FDE4A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0BF94CBA-421E-496F-8CC5-5FDA9E51F3D7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0BF94CBA-421E-496F-8CC5-5FDA9E51F3D7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0BF94CBA-421E-496F-8CC5-5FDA9E51F3D7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0BF94CBA-421E-496F-8CC5-5FDA9E51F3D7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{34A4B2B8-2822-4E49-BA59-782B49C785F2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{34A4B2B8-2822-4E49-BA59-782B49C785F2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{34A4B2B8-2822-4E49-BA59-782B49C785F2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{34A4B2B8-2822-4E49-BA59-782B49C785F2}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

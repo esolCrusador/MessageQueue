@@ -3,7 +3,7 @@ using Azure.Messaging.ServiceBus;
 using System;
 using System.Net;
 
-namespace EsoTech.MessageQueue.AzureServiceBus
+namespace EsoTech.MessageQueue.AzureServicebus
 {
     internal static class ExceptionExtensions
     {

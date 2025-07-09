@@ -1,5 +1,6 @@
 using Azure.Messaging.ServiceBus;
 using EsoTech.MessageQueue.Abstractions;
+using EsoTech.MessageQueue.AzureServicebus;
 using EsoTech.MessageQueue.Extensions;
 using EsoTech.MessageQueue.Serialization;
 using Microsoft.Extensions.Logging;
@@ -7,7 +8,6 @@ using Microsoft.Extensions.Options;
 using OpenTracing;
 using OpenTracing.Propagation;
 using OpenTracing.Tag;
-using Polly.Utilities;
 using Prometheus;
 using System;
 using System.Collections.Concurrent;
@@ -18,7 +18,6 @@ using System.Reactive;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Reactive.Threading.Tasks;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -26,7 +25,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 {
     internal sealed class AzureServiceBusConsumer : IMessageConsumer
     {
-        private static readonly NoopDisposable _defaultDisposable = new NoopDisposable();
+        private static readonly NoopDisposable DefaultDisposable = new NoopDisposable();
 
         private Subject<Unit> _handled = new Subject<Unit>();
         private static readonly Counter ExecutedMessages =
@@ -387,7 +386,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                     .Select(_ => Observable.FromAsync(cancellation => args.RenewMessageLockAsync(args.Message, cancellation)))
                     .Concat()
                     .Subscribe()
-                : _defaultDisposable;
+                : DefaultDisposable;
 
             if (Tracer == null)
             {

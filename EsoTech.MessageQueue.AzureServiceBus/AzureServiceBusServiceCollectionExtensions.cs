@@ -6,12 +6,12 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using System;
 
-namespace EsoTech.MessageQueue
+namespace EsoTech.MessageQueue.AzureServicebus
 {
     public static class AzureServiceBusServiceCollectionExtensions
     {
         public static IServiceCollection AddAzureServiceBusMessageQueue(this IServiceCollection self, Action<AzureServiceBusConfiguration> configure) =>
-            AddAzureServiceBusMessageQueue(self, (options, _) => configure(options));
+            self.AddAzureServiceBusMessageQueue((options, _) => configure(options));
         public static IServiceCollection AddAzureServiceBusMessageQueue(this IServiceCollection self, Action<AzureServiceBusConfiguration, IServiceProvider>? configure = null)
         {
             self.TryAddSingleton<AzureServiceBusClientHolder>();

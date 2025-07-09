@@ -1,8 +1,9 @@
 ﻿using Azure.Messaging.ServiceBus;
+using EsoTech.MessageQueue.AzureServiceBus;
 using Microsoft.Extensions.Options;
 using System;
 
-namespace EsoTech.MessageQueue.AzureServiceBus
+namespace EsoTech.MessageQueue.AzureServicebus
 {
     internal class AzureServiceBusClientHolder
     {

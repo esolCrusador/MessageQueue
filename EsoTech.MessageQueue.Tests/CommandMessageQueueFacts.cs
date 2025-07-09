@@ -11,6 +11,8 @@ using EsoTech.MessageQueue.Tests.Messages;
 using System.Threading;
 using EsoTech.MessageQueue.Tests.CommandHandlers;
 using EsoTech.MessageQueue.AzureServiceBus;
+using EsoTech.MessageQueue.AzureServicebus;
+using EsoTech.MessageQueue.RabbitMQ;
 
 namespace EsoTech.MessageQueue.Tests
 {
@@ -23,39 +25,26 @@ namespace EsoTech.MessageQueue.Tests
             {
             }
 
-            public static IServiceProvider CreateServiceProvider()
+            public static IServiceCollection CreateServiceProvider()
             {
                 var serviceCollection = new ServiceCollection()
-                    .AddLogging()
-                    .AddSingleton<FooCommandHandler>().AddSingleton<ICommandMessageHandler>(ctx => ctx.GetRequiredService<FooCommandHandler>())
-                    .AddSingleton<EnvelopedFooCommandHandler>().AddSingleton<ICommandMessageHandler>(ctx => ctx.GetRequiredService<EnvelopedFooCommandHandler>())
-                    .AddSingleton<BarCommandHandler>().AddSingleton<ICommandMessageHandler>(ctx => ctx.GetRequiredService<BarCommandHandler>())
-                    .AddCommandMessageHandler<MultiCommandHandler1>()
-                    .AddCommandMessageHandler<MultiCommandHandler2>();
+                    .AddLogging();
 
                 serviceCollection.AddFakeMessageQueue();
 
-                var serviceProvider = serviceCollection.BuildServiceProvider();
-
-                return serviceProvider;
+                return serviceCollection;
             }
         }
 
         [Trait("Category", "Slow")]
-        public sealed class Slow : CommandMessageQueueFacts
+        public sealed class SlowAzureServiceBus : CommandMessageQueueFacts
         {
-            public Slow() : base(new ServiceCollection()
+            public SlowAzureServiceBus() : base(new ServiceCollection()
                 .AddLogging()
                 .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddEnvironmentVariables().Build())
-                .AddCommandMessageHandler<FooCommandHandler>()
-                .AddCommandMessageHandler<EnvelopedFooCommandHandler>()
-                .AddCommandMessageHandler<BarCommandHandler>()
-                .AddCommandMessageHandler<MultiCommandHandler1>()
-                .AddCommandMessageHandler<MultiCommandHandler2>()
                 .SuppressContinuousPolling()
                 .AddMessageQueue()
                 .AddAzureServiceBusMessageQueue(cfg => cfg.ConnectionStringName = "TestServiceBusConnectionString")
-                .BuildServiceProvider()
             )
             {
             }
@@ -68,8 +57,31 @@ namespace EsoTech.MessageQueue.Tests
             //}
         }
 
-        private CommandMessageQueueFacts(IServiceProvider serviceProvider)
+        [Trait("Category", "Slow")]
+        [Collection(nameof(RabbitMqCollectionCollection))]
+        public sealed class SlowRabbit : CommandMessageQueueFacts
         {
+            public SlowRabbit(RabbitMqTestFixture rabbitMqTestFixture) : base(new ServiceCollection()
+                .AddLogging()
+                .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddEnvironmentVariables().Build())
+                .SuppressContinuousPolling()
+                .AddMessageQueue()
+                .AddRabbitMq(rabbitMqTestFixture.Configure)
+            )
+            {
+            }
+        }
+
+        private CommandMessageQueueFacts(IServiceCollection services)
+        {
+            services.AddCommandMessageHandler<FooCommandHandler>()
+                .AddCommandMessageHandler<EnvelopedFooCommandHandler>()
+                .AddCommandMessageHandler<BarCommandHandler>()
+                .AddCommandMessageHandler<MultiCommandHandler1>()
+                .AddCommandMessageHandler<MultiCommandHandler2>();
+
+            var serviceProvider = services.BuildServiceProvider();
+
             _serviceProvier = serviceProvider;
 
             _subscriber = serviceProvider.GetRequiredService<IMessageConsumer>();

@@ -1,6 +1,8 @@
 ﻿using EsoTech.MessageQueue.Abstractions;
 using EsoTech.MessageQueue.Abstractions.Aggregations;
+using EsoTech.MessageQueue.AzureServicebus;
 using EsoTech.MessageQueue.AzureServiceBus;
+using EsoTech.MessageQueue.RabbitMQ;
 using EsoTech.MessageQueue.Testing;
 using EsoTech.MessageQueue.Tests.CommandHandlers;
 using EsoTech.MessageQueue.Tests.EventHandlers;
@@ -21,30 +23,93 @@ namespace EsoTech.MessageQueue.Tests
         [Trait("Category", "Fast")]
         public sealed class Fast : MessageQueueSessionFacts
         {
-            public Fast() : base(CreateServiceProvider())
+            public Fast() : base(CreateServices())
             {
             }
 
-            public static ServiceProvider CreateServiceProvider()
+            public static IServiceCollection CreateServices()
             {
-                var serviceCollection = ConfigureCommonServices(new ServiceCollection());
+                var serviceCollection = new ServiceCollection();
                 serviceCollection.AddFakeMessageQueue();
 
-                var serviceProvider = serviceCollection.BuildServiceProvider();
+                return serviceCollection;
+            }
 
-                return serviceProvider;
+            [Fact]
+            public async Task HandleNext_Should_Send_Events_DelayedEvents_Commands()
+            {
+                var msg1 = new FooMsg { Text = "some text 1" };
+                var msg2 = new FooMsg { Text = "some text 2" };
+
+                await using (var scope = _serviceProvier.CreateAsyncScope())
+                {
+                    var queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
+                    queue.SendEvent(msg1);
+                    queue.SendEvent(msg2);
+                    queue.SendEvent(new FooMsg { Text = "Delayed" }, TimeSpan.FromMilliseconds(100));
+                    queue.SendCommand(new BarMsg { Text = "Command" });
+                    (await _subscriber.TryHandleNext()).Should().BeFalse();
+                }
+                await _subscriber.HandleNext();
+                await _subscriber.HandleNext();
+                await _subscriber.HandleNext();
+                await _subscriber.HandleNext();
+
+                _fooHandler.Log.Should().HaveCount(3);
+                _fooHandler.Log.Should().ContainEquivalentOf(msg1);
+                _fooHandler.Log.Should().ContainEquivalentOf(msg2);
+                _fooHandler.Log.Should().ContainEquivalentOf(new FooMsg { Text = "Delayed" });
+                _barCommandHandler.Log.Should().ContainEquivalentOf(new BarMsg { Text = "Command" });
             }
         }
 
         [Trait("Category", "Slow")]
-        public sealed class Slow : MessageQueueSessionFacts
+        public sealed class SlowAzureServiceBus : MessageQueueSessionFacts
         {
-            public Slow() : base(ConfigureCommonServices(new ServiceCollection())
+            public SlowAzureServiceBus() : base(new ServiceCollection()
                 .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddEnvironmentVariables().Build())
-                .SuppressContinuousPolling()
                 .AddMessageQueue()
                 .AddAzureServiceBusMessageQueue(opts => opts.ConnectionStringName = "TestServiceBusConnectionString")
-                .BuildServiceProvider()
+            )
+            {
+            }
+
+            [Fact]
+            public async Task HandleNext_Should_Send_Events_DelayedEvents_Commands()
+            {
+                var msg1 = new FooMsg { Text = "some text 1" };
+                var msg2 = new FooMsg { Text = "some text 2" };
+
+                await using (var scope = _serviceProvier.CreateAsyncScope())
+                {
+                    var queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
+                    queue.SendEvent(msg1);
+                    queue.SendEvent(msg2);
+                    queue.SendEvent(new FooMsg { Text = "Delayed" }, TimeSpan.FromMilliseconds(100));
+                    queue.SendCommand(new BarMsg { Text = "Command" });
+                    (await _subscriber.TryHandleNext()).Should().BeFalse();
+                }
+                await _subscriber.HandleNext();
+                await _subscriber.HandleNext();
+                await _subscriber.HandleNext();
+                await _subscriber.HandleNext();
+
+                _fooHandler.Log.Should().HaveCount(3);
+                _fooHandler.Log.Should().ContainEquivalentOf(msg1);
+                _fooHandler.Log.Should().ContainEquivalentOf(msg2);
+                _fooHandler.Log.Should().ContainEquivalentOf(new FooMsg { Text = "Delayed" });
+                _barCommandHandler.Log.Should().ContainEquivalentOf(new BarMsg { Text = "Command" });
+            }
+        }
+
+        [Trait("Category", "Slow")]
+        [Collection(nameof(RabbitMqCollectionCollection))]
+        public sealed class SlowRabbit : MessageQueueSessionFacts
+        {
+            public SlowRabbit(RabbitMqTestFixture rabbitMqTestFixture) : base(new ServiceCollection()
+                .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddEnvironmentVariables().Build())
+                .AddMessageQueue()
+                .AddRabbitMq(rabbitMqTestFixture.Configure)
             )
             {
             }
@@ -64,8 +129,11 @@ namespace EsoTech.MessageQueue.Tests
                     .AddMessageAggregator<SessionMsg, List<SessionMsg>>((list, msg) => list.Add(msg));
         }
 
-        private MessageQueueSessionFacts(ServiceProvider serviceProvider)
+        private MessageQueueSessionFacts(IServiceCollection services)
         {
+            ConfigureCommonServices(services);
+            services.SuppressContinuousPolling();
+            var serviceProvider = services.BuildServiceProvider();
             _serviceProvier = serviceProvider;
 
             _subscriber = serviceProvider.GetRequiredService<IMessageConsumer>();
@@ -112,8 +180,8 @@ namespace EsoTech.MessageQueue.Tests
         {
             await using (var scope = _serviceProvier.CreateAsyncScope())
             {
-                var _queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
-                _queue.SendEvent(new FooMsg());
+                var queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
+                queue.SendEvent(new FooMsg());
             }
 
             _fooHandler.Log.OfType<object>().Concat(_barHandler.Log).Should().BeEmpty();
@@ -128,8 +196,8 @@ namespace EsoTech.MessageQueue.Tests
 
             await using (var scope = _serviceProvier.CreateAsyncScope())
             {
-                var _queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
-                _queue.SendEvent(msg);
+                var queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
+                queue.SendEvent(msg);
                 (await _subscriber.TryHandleNext()).Should().BeFalse();
             }
             await _subscriber.HandleNext();
@@ -145,8 +213,8 @@ namespace EsoTech.MessageQueue.Tests
 
             await using (var scope = _serviceProvier.CreateAsyncScope())
             {
-                var _queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
-                _queue.SendEvents(new List<FooMsg> { msg1, msg2 });
+                var queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
+                queue.SendEvents(new List<FooMsg> { msg1, msg2 });
                 (await _subscriber.TryHandleNext()).Should().BeFalse();
             }
             await _subscriber.HandleNext();
@@ -165,9 +233,9 @@ namespace EsoTech.MessageQueue.Tests
 
             await using (var scope = _serviceProvier.CreateAsyncScope())
             {
-                var _queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
-                _queue.SendEvent(msg1);
-                _queue.SendEvent(msg2);
+                var queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
+                queue.SendEvent(msg1);
+                queue.SendEvent(msg2);
                 (await _subscriber.TryHandleNext()).Should().BeFalse();
             }
             await _subscriber.HandleNext();
@@ -179,33 +247,6 @@ namespace EsoTech.MessageQueue.Tests
         }
 
         [Fact]
-        public async Task HandleNext_Should_Send_Events_DelayedEvents_Commands()
-        {
-            var msg1 = new FooMsg { Text = "some text 1" };
-            var msg2 = new FooMsg { Text = "some text 2" };
-
-            await using (var scope = _serviceProvier.CreateAsyncScope())
-            {
-                var _queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
-                _queue.SendEvent(msg1);
-                _queue.SendEvent(msg2);
-                _queue.SendEvent(new FooMsg { Text = "Delayed" }, TimeSpan.FromMilliseconds(100));
-                _queue.SendCommand(new BarMsg { Text = "Command" });
-                (await _subscriber.TryHandleNext()).Should().BeFalse();
-            }
-            await _subscriber.HandleNext();
-            await _subscriber.HandleNext();
-            await _subscriber.HandleNext();
-            await _subscriber.HandleNext();
-
-            _fooHandler.Log.Should().HaveCount(3);
-            _fooHandler.Log.Should().ContainEquivalentOf(msg1);
-            _fooHandler.Log.Should().ContainEquivalentOf(msg2);
-            _fooHandler.Log.Should().ContainEquivalentOf(new FooMsg { Text = "Delayed" });
-            _barCommandHandler.Log.Should().ContainEquivalentOf(new BarMsg { Text = "Command" });
-        }
-
-        [Fact]
         public async Task Should_Aggregate_Events()
         {
             var msg1 = new SessionMsg { Message = "1" };
@@ -213,9 +254,9 @@ namespace EsoTech.MessageQueue.Tests
 
             await using (var scope = _serviceProvier.CreateAsyncScope())
             {
-                var _queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
-                _queue.SendEvent(msg1);
-                _queue.SendEvent(msg2);
+                var queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
+                queue.SendEvent(msg1);
+                queue.SendEvent(msg2);
             }
 
             await _subscriber.HandleNext();
@@ -231,9 +272,9 @@ namespace EsoTech.MessageQueue.Tests
 
             await using (var scope = _serviceProvier.CreateAsyncScope())
             {
-                var _queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
-                _queue.SendEvent(msg1);
-                _queue.SendEvent(msg2);
+                var queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
+                queue.SendEvent(msg1);
+                queue.SendEvent(msg2);
             }
 
             await _subscriber.HandleNext();
