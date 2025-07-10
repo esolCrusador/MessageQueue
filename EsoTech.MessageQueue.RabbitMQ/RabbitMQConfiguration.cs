@@ -21,5 +21,6 @@ namespace EsoTech.MessageQueue.RabbitMQ
         public string? Password { get; set; }
         public string VirtualHost { get; set; } = "/";
         public bool UseSsl { get; set; }
+        public bool IgnoreSslErrors { get; set; }
     }
 }

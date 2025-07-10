@@ -10,6 +10,9 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Threading;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
+using Microsoft.Extensions.Logging;
 
 namespace EsoTech.MessageQueue.RabbitMQ
 {
@@ -18,7 +21,7 @@ namespace EsoTech.MessageQueue.RabbitMQ
         private readonly RabbitMQConnectionConfiguration _connection;
         private readonly string _virtualHost;
         private readonly ConnectionFactory _factory;
-
+        private readonly ILogger<RabbitMQClient> _logger;
         private Task<IConnection> _connectionTask;
 
         public async Task<IChannel> CreateChannel()
@@ -34,10 +37,12 @@ namespace EsoTech.MessageQueue.RabbitMQ
             }
         }
 
-        public RabbitMQClient(IOptions<RabbitMQConfiguration> options)
+        public RabbitMQClient(IOptions<RabbitMQConfiguration> options, ILogger<RabbitMQClient> logger)
         {
             _connection = options.Value.Connection;
             _virtualHost = _connection.VirtualHost;
+            _logger = logger;
+
             _factory = new ConnectionFactory
             {
                 HostName = _connection.Host ?? throw new ArgumentException($"{nameof(options.Value.Connection)}.{nameof(_connection.Host)} is not configured"),
@@ -53,6 +58,17 @@ namespace EsoTech.MessageQueue.RabbitMQ
                     ServerName = _connection.Host,
                     Enabled = true,
                 };
+                if (_connection.IgnoreSslErrors)
+                {
+                    _factory.Ssl.AcceptablePolicyErrors = SslPolicyErrors.RemoteCertificateChainErrors | SslPolicyErrors.RemoteCertificateNameMismatch;
+                    _factory.Ssl.CertificateValidationCallback = (object sender, X509Certificate? certificate, X509Chain? chain, SslPolicyErrors sslPolicyErrors) =>
+                    {
+                        if (sslPolicyErrors != SslPolicyErrors.None)
+                            _logger.LogWarning($"Error during RabbitMQ certificate validation");
+
+                        return true;
+                    };
+                }
             }
 
             _connectionTask = _factory.CreateConnectionAsync();
@@ -68,13 +84,26 @@ namespace EsoTech.MessageQueue.RabbitMQ
                 var managementPort = _connection.ManagementPort;
                 var managementHost = _connection.Host;
 
-                using var httpClient = new HttpClient();
+                using var handler = new HttpClientHandler();
+                if (_connection.IgnoreSslErrors)
+                    handler.ServerCertificateCustomValidationCallback = (httpRequestMessage, cert, chain, sslPolicyErrors) =>
+                    {
+                        if (sslPolicyErrors != SslPolicyErrors.None)
+                            _logger.LogWarning($"Error during RabbitMQ certificate validation");
+
+                        return true;
+                    };
+
+                using var httpClient = new HttpClient(handler)
+                {
+                    BaseAddress = new Uri($"http{(_connection.UseSsl ? "s" : "")}://{managementHost}:{managementPort}")
+                };
 
                 var authValue = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{_connection.User}:{_connection.Password}"));
                 httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", authValue);
 
                 using var createVhostResponse = await httpClient.PutAsync(
-                     $"http://{managementHost}:{managementPort}/api/vhosts/{Uri.EscapeDataString(_virtualHost)}",
+                     $"api/vhosts/{Uri.EscapeDataString(_virtualHost)}",
                      null,
                      cancellationToken
                 );
@@ -97,7 +126,7 @@ namespace EsoTech.MessageQueue.RabbitMQ
                     "application/json");
 
                 using var permResponse = await httpClient.PutAsync(
-                    $"http://{managementHost}:{managementPort}/api/permissions/" +
+                    $"api/permissions/" +
                     $"{Uri.EscapeDataString(_virtualHost)}/{_connection.User}",
                     permContent, cancellationToken);
 

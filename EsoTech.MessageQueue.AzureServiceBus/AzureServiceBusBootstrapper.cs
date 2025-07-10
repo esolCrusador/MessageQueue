@@ -8,7 +8,7 @@ using System;
 
 namespace EsoTech.MessageQueue.AzureServicebus
 {
-    public static class AzureServiceBusServiceCollectionExtensions
+    public static class AzureServiceBusBootstrapper
     {
         public static IServiceCollection AddAzureServiceBusMessageQueue(this IServiceCollection self, Action<AzureServiceBusConfiguration> configure) =>
             self.AddAzureServiceBusMessageQueue((options, _) => configure(options));
