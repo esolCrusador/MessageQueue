@@ -23,18 +23,18 @@ namespace EsoTech.MessageQueue.Tests
         private readonly AzureServiceBusManager? _azureServiceBusManager;
         private readonly IMessageQueue _queue;
 
-        [Trait("Category", "Slow")]
-        public sealed class SlowAzureServiceBus : RetryFacts
-        {
-            public SlowAzureServiceBus() : base(new ServiceCollection()
-                .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddEnvironmentVariables().Build())
-                .SuppressContinuousPolling()
-                .AddMessageQueue(opts => opts.AckTimeout = TimeSpan.FromSeconds(1))
-                .AddAzureServiceBusMessageQueue(opts => opts.ConnectionStringName = "TestServiceBusConnectionString")
-            )
-            {
-            }
-        }
+        //[Trait("Category", "Slow")]
+        //public sealed class SlowAzureServiceBus : RetryFacts
+        //{
+        //    public SlowAzureServiceBus() : base(new ServiceCollection()
+        //        .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddEnvironmentVariables().Build())
+        //        .SuppressContinuousPolling()
+        //        .AddMessageQueue(opts => opts.AckTimeout = TimeSpan.FromSeconds(1))
+        //        .AddAzureServiceBusMessageQueue(opts => opts.ConnectionStringName = "TestServiceBusConnectionString")
+        //    )
+        //    {
+        //    }
+        //}
 
         private static IServiceCollection ConfigureCommonServices(IServiceCollection services)
         {

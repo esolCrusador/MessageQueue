@@ -1,5 +1,7 @@
 ﻿using EsoTech.MessageQueue.Abstractions;
 using EsoTech.MessageQueue.AzureServiceBus;
+using EsoTech.MessageQueue.RabbitMQ.Serialization;
+using EsoTech.MessageQueue.RabbitMQ.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System;
@@ -25,12 +27,15 @@ namespace EsoTech.MessageQueue.RabbitMQ
         private static void RegisterService(IServiceCollection services)
         {
             services.AddSingleton<NamingConvention>();
+            services.AddSingleton<RabbitMqManagement>();
             services.AddSingleton<RabbitMQClient>();
             services.AddSingleton<MessageSerializer>();
             services.AddSingleton<HashFunction>();
+            services.AddSingleton<RabbitMqQueueFactory>();
 
             services.AddSingleton<IMessageConsumer, RabbitMqConsumer>();
-            services.AddSingleton<IMessageQueue, RabbitMqMessageQueue>();
+            services.AddSingleton<RabbitMqMessageQueue>();
+            services.AddSingleton<IMessageQueue>(sp => sp.GetRequiredService<RabbitMqMessageQueue>());
         }
     }
 }

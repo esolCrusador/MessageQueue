@@ -15,12 +15,14 @@ using System.Reactive.Subjects;
 using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
 using EsoTech.MessageQueue.Extensions;
+using EsoTech.MessageQueue.RabbitMQ.Serialization;
 
-namespace EsoTech.MessageQueue.RabbitMQ
+namespace EsoTech.MessageQueue.RabbitMQ.Services
 {
     public class RabbitMqConsumer : IMessageConsumer
     {
         private readonly RabbitMQClient _rabbitMQClient;
+        private readonly RabbitMqQueueFactory _queueFactory;
         private readonly NamingConvention _namingConvention;
         private readonly MessageSerializer _messageSerializer;
         private readonly RabbitMQConfiguration _options;
@@ -44,9 +46,10 @@ namespace EsoTech.MessageQueue.RabbitMQ
             }
         }
 
-        public RabbitMqConsumer(RabbitMQClient rabbitMQClient, IEnumerable<IEventMessageHandler> eventHandlers, IEnumerable<ICommandMessageHandler> commandHandlers, NamingConvention namingConvention, MessageSerializer messageSerializer, IOptions<RabbitMQConfiguration> options, IOptions<MessageQueueConfiguration> messagingOptions, ILogger<RabbitMqConsumer> logger)
+        public RabbitMqConsumer(RabbitMQClient rabbitMQClient, RabbitMqQueueFactory queueFactory, IEnumerable<IEventMessageHandler> eventHandlers, IEnumerable<ICommandMessageHandler> commandHandlers, NamingConvention namingConvention, MessageSerializer messageSerializer, IOptions<RabbitMQConfiguration> options, IOptions<MessageQueueConfiguration> messagingOptions, ILogger<RabbitMqConsumer> logger)
         {
             _rabbitMQClient = rabbitMQClient;
+            _queueFactory = queueFactory;
             _eventHandlers = eventHandlers.ToList();
             _commandHandlers = commandHandlers.ToList();
             _namingConvention = namingConvention;
@@ -182,14 +185,14 @@ namespace EsoTech.MessageQueue.RabbitMQ
                     channel = await _rabbitMQClient.CreateChannel();
                     await channel.BasicQosAsync(0, (ushort)_messagingOptions.MaxConcurrentMessages, false);
 
-                    channel.ChannelShutdownAsync += (object sender, ShutdownEventArgs @event) =>
+                    channel.ChannelShutdownAsync += (sender, @event) =>
                     {
                         if (!cts.IsCancellationRequested)
                             restartTokenSource.Cancel();
 
                         return Task.CompletedTask;
                     };
-                    channel.CallbackExceptionAsync += (object sender, CallbackExceptionEventArgs e) =>
+                    channel.CallbackExceptionAsync += (sender, e) =>
                     {
                         if (!cts.IsCancellationRequested)
                             failureTokenSource.Cancel();
@@ -232,8 +235,9 @@ namespace EsoTech.MessageQueue.RabbitMQ
                             _logger.LogError(ex, "Consumer failed {Subscrription}", subscriptionFactory.Name);
 
                             int rediliveryCount = 0;
-                            if (args.BasicProperties.Headers?.TryGetValue("x-redelivery-count", out var redeliveryCountObj) == true)
+                            if (args.BasicProperties.Headers?.TryGetValue(NamingConvention.RediliveryCountHeader, out var redeliveryCountObj) == true)
                                 rediliveryCount = int.Parse(Encoding.UTF8.GetString((byte[])redeliveryCountObj!));
+                            rediliveryCount++;
 
                             var properties = new BasicProperties(args.BasicProperties)
                             {
@@ -243,8 +247,9 @@ namespace EsoTech.MessageQueue.RabbitMQ
                             };
                             if (rediliveryCount >= _options.MaxDeliveryCount)
                             {
-                                var deadLetterQueue = await _rabbitMQClient.CreateDeadletterQueue(channel, subscriptionFactory.Name, cancellationToken);
+                                var deadLetterQueue = await _queueFactory.CreateDeadLetterQueueue(subscriptionFactory.Name, cancellationToken);
 
+                                properties.Headers[NamingConvention.DeadletterRoutingKeyHeader] = args.RoutingKey;
                                 _logger.LogWarning("Sending message {Message} to deadletter queue after {Retries} retries", messageText, rediliveryCount);
                                 await channel.BasicPublishAsync(
                                     deadLetterQueue,
@@ -261,8 +266,7 @@ namespace EsoTech.MessageQueue.RabbitMQ
                                 if (delayBeforeNack > TimeSpan.Zero)
                                     await Task.Delay(delayBeforeNack, args.CancellationToken);
 
-                                rediliveryCount++;
-                                properties.Headers["x-redelivery-count"] = Encoding.UTF8.GetBytes(rediliveryCount.ToString());
+                                properties.Headers[NamingConvention.RediliveryCountHeader] = Encoding.UTF8.GetBytes(rediliveryCount.ToString());
 
                                 _logger.LogWarning("Republishing message {Message}. Retries: {Retries}", messageText, rediliveryCount);
                                 await channel.BasicPublishAsync(

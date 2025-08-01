@@ -13,6 +13,10 @@ namespace EsoTech.MessageQueue.RabbitMQ
         private readonly Regex _toReplace = new Regex("(`\\d+)|,", RegexOptions.Compiled);
         private readonly HashFunction _hashFunction;
         private readonly Dictionary<string, string> _serviceNamesRemap;
+        
+        public const string DeadletterQueuePostfix = "-deadletter";
+        public const string DeadletterRoutingKeyHeader = "x-deadletter-routing-key";
+        public const string RediliveryCountHeader = "x-redelivery-count";
 
         public NamingConvention(HashFunction hashFunction, IOptions<RabbitMQConfiguration> configuration)
         {

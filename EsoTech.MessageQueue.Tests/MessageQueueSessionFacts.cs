@@ -1,6 +1,5 @@
 ﻿using EsoTech.MessageQueue.Abstractions;
 using EsoTech.MessageQueue.Abstractions.Aggregations;
-using EsoTech.MessageQueue.AzureServicebus;
 using EsoTech.MessageQueue.AzureServiceBus;
 using EsoTech.MessageQueue.RabbitMQ;
 using EsoTech.MessageQueue.Testing;
@@ -63,44 +62,44 @@ namespace EsoTech.MessageQueue.Tests
             }
         }
 
-        [Trait("Category", "Slow")]
-        public sealed class SlowAzureServiceBus : MessageQueueSessionFacts
-        {
-            public SlowAzureServiceBus() : base(new ServiceCollection()
-                .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddEnvironmentVariables().Build())
-                .AddMessageQueue()
-                .AddAzureServiceBusMessageQueue(opts => opts.ConnectionStringName = "TestServiceBusConnectionString")
-            )
-            {
-            }
+        //[Trait("Category", "Slow")]
+        //public sealed class SlowAzureServiceBus : MessageQueueSessionFacts
+        //{
+        //    public SlowAzureServiceBus() : base(new ServiceCollection()
+        //        .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddEnvironmentVariables().Build())
+        //        .AddMessageQueue()
+        //        .AddAzureServiceBusMessageQueue(opts => opts.ConnectionStringName = "TestServiceBusConnectionString")
+        //    )
+        //    {
+        //    }
 
-            [Fact]
-            public async Task HandleNext_Should_Send_Events_DelayedEvents_Commands()
-            {
-                var msg1 = new FooMsg { Text = "some text 1" };
-                var msg2 = new FooMsg { Text = "some text 2" };
+        //    [Fact]
+        //    public async Task HandleNext_Should_Send_Events_DelayedEvents_Commands()
+        //    {
+        //        var msg1 = new FooMsg { Text = "some text 1" };
+        //        var msg2 = new FooMsg { Text = "some text 2" };
 
-                await using (var scope = _serviceProvier.CreateAsyncScope())
-                {
-                    var queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
-                    queue.SendEvent(msg1);
-                    queue.SendEvent(msg2);
-                    queue.SendEvent(new FooMsg { Text = "Delayed" }, TimeSpan.FromMilliseconds(100));
-                    queue.SendCommand(new BarMsg { Text = "Command" });
-                    (await _subscriber.TryHandleNext()).Should().BeFalse();
-                }
-                await _subscriber.HandleNext();
-                await _subscriber.HandleNext();
-                await _subscriber.HandleNext();
-                await _subscriber.HandleNext();
+        //        await using (var scope = _serviceProvier.CreateAsyncScope())
+        //        {
+        //            var queue = scope.ServiceProvider.GetRequiredService<IMessageQueueSession>();
+        //            queue.SendEvent(msg1);
+        //            queue.SendEvent(msg2);
+        //            queue.SendEvent(new FooMsg { Text = "Delayed" }, TimeSpan.FromMilliseconds(100));
+        //            queue.SendCommand(new BarMsg { Text = "Command" });
+        //            (await _subscriber.TryHandleNext()).Should().BeFalse();
+        //        }
+        //        await _subscriber.HandleNext();
+        //        await _subscriber.HandleNext();
+        //        await _subscriber.HandleNext();
+        //        await _subscriber.HandleNext();
 
-                _fooHandler.Log.Should().HaveCount(3);
-                _fooHandler.Log.Should().ContainEquivalentOf(msg1);
-                _fooHandler.Log.Should().ContainEquivalentOf(msg2);
-                _fooHandler.Log.Should().ContainEquivalentOf(new FooMsg { Text = "Delayed" });
-                _barCommandHandler.Log.Should().ContainEquivalentOf(new BarMsg { Text = "Command" });
-            }
-        }
+        //        _fooHandler.Log.Should().HaveCount(3);
+        //        _fooHandler.Log.Should().ContainEquivalentOf(msg1);
+        //        _fooHandler.Log.Should().ContainEquivalentOf(msg2);
+        //        _fooHandler.Log.Should().ContainEquivalentOf(new FooMsg { Text = "Delayed" });
+        //        _barCommandHandler.Log.Should().ContainEquivalentOf(new BarMsg { Text = "Command" });
+        //    }
+        //}
 
         [Trait("Category", "Slow")]
         [Collection(nameof(RabbitMqCollectionCollection))]

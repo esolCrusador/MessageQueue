@@ -24,7 +24,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         private readonly ILogger _logger;
 
         private Task<BusSchema> _initialSchema;
-        private ServiceBusAdministrationClient Client => _client ??= new ServiceBusAdministrationClient(_azureOptions.ConnectionString);
+        private ServiceBusAdministrationClient Client => _client ??= new ServiceBusAdministrationClient(_azureOptions.AdministrativeConnectionString ?? _azureOptions.ConnectionString);
 
         public AzureServiceBusManager(IOptions<MessageQueueConfiguration> messageQueueOptions, IOptions<AzureServiceBusConfiguration> azureOptions, AzureServiceBusNamingConvention namingConvention, ILogger<AzureServiceBusManager> logger)
         {

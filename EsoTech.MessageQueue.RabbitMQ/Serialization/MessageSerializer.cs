@@ -3,7 +3,7 @@ using Prometheus;
 using System;
 using System.Text.Json;
 
-namespace EsoTech.MessageQueue.RabbitMQ
+namespace EsoTech.MessageQueue.RabbitMQ.Serialization
 {
     public class MessageSerializer
     {

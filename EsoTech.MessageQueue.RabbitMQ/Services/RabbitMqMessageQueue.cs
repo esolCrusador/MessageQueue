@@ -1,33 +1,35 @@
 ﻿using EsoTech.MessageQueue.Abstractions;
+using EsoTech.MessageQueue.RabbitMQ.Serialization;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace EsoTech.MessageQueue.RabbitMQ
+namespace EsoTech.MessageQueue.RabbitMQ.Services
 {
-    public class RabbitMqMessageQueue : IMessageQueue, IAsyncDisposable
+    public class RabbitMqMessageQueue : IMessageQueue
     {
+        private readonly RabbitMqQueueFactory _rabbitMqQueueFactory;
         private readonly RabbitMQClient _rabbitMQClient;
+        private readonly RabbitMqManagement _rabbitMqManager;
         private readonly RabbitMQConfiguration _options;
         private readonly NamingConvention _namingConvention;
         private readonly MessageSerializer _messageSerializer;
 
-        private SemaphoreSlim _channelLock = new SemaphoreSlim(1);
-        private IChannel? _channel;
-
-        private readonly ConcurrentDictionary<string, Lazy<Task>> _topics = new();
         private readonly ConcurrentDictionary<Type, string> _topicNames = new();
         private readonly ConcurrentDictionary<Type, string> _routingKeys = new();
-        private readonly ConcurrentDictionary<string, Lazy<Task>> _queues = new();
         private readonly ConcurrentDictionary<Type, string> _queueNames = new();
 
-        public RabbitMqMessageQueue(RabbitMQClient rabbitMQClient, IOptions<RabbitMQConfiguration> options, NamingConvention namingConvention, MessageSerializer messageSerializer)
+        public RabbitMqMessageQueue(RabbitMqQueueFactory rabbitMqQueueFactory, RabbitMQClient rabbitMQClient, RabbitMqManagement rabbitMqManager, IOptions<RabbitMQConfiguration> options, NamingConvention namingConvention, MessageSerializer messageSerializer)
         {
+            _rabbitMqQueueFactory = rabbitMqQueueFactory;
             _rabbitMQClient = rabbitMQClient;
+            _rabbitMqManager = rabbitMqManager;
             _options = options.Value;
             _namingConvention = namingConvention;
             _messageSerializer = messageSerializer;
@@ -42,7 +44,7 @@ namespace EsoTech.MessageQueue.RabbitMQ
             var topicName = _topicNames.GetOrAdd(messageType, _namingConvention.GetTopicName);
             var routingKey = _routingKeys.GetOrAdd(messageType, _namingConvention.GetRoutingKey);
 
-            await CreateTopic(topicName, default);
+            await _rabbitMqQueueFactory.CreateTopic(topicName, default);
 
             await PublishMessage(topicName, eventMessage, default);
         }
@@ -63,7 +65,7 @@ namespace EsoTech.MessageQueue.RabbitMQ
             var messageType = message.GetType();
             var queueName = _queueNames.GetOrAdd(messageType, _namingConvention.GetQueueName);
 
-            await CreateQueueue(queueName, cancellationToken);
+            await _rabbitMqQueueFactory.CreateQueueue(queueName, cancellationToken);
 
             await PublishMessage(queueName, message, cancellationToken);
         }
@@ -73,7 +75,7 @@ namespace EsoTech.MessageQueue.RabbitMQ
             var messageType = commandMessage.GetType();
             var queueName = _queueNames.GetOrAdd(messageType, _namingConvention.GetQueueName);
 
-            await CreateQueueue(queueName, default);
+            await _rabbitMqQueueFactory.CreateQueueue(queueName, default);
 
             await PublishMessage(queueName, commandMessage, default);
         }
@@ -93,7 +95,7 @@ namespace EsoTech.MessageQueue.RabbitMQ
         {
             var messageType = message.GetType();
             var routingKey = _routingKeys.GetOrAdd(messageType, _namingConvention.GetRoutingKey);
-            var channel = await GetChannel();
+            var channel = await _rabbitMQClient.GetSenderChannel();
 
             await channel.BasicPublishAsync(destanation, routingKey, true,
             new BasicProperties
@@ -102,7 +104,7 @@ namespace EsoTech.MessageQueue.RabbitMQ
                 ContentType = "application/json",
                 Headers = new Dictionary<string, object?>
                 {
-                    ["x-redelivery-count"] = "0"
+                    [NamingConvention.RediliveryCountHeader] = "0"
                 }
             },
             _messageSerializer.Serialize(new Message
@@ -115,66 +117,58 @@ namespace EsoTech.MessageQueue.RabbitMQ
             cancellationToken);
         }
 
-        private async Task CreateTopic(string topic, CancellationToken cancellationToken)
+        public Task<int> RepublishErrorQueues(string? filter, CancellationToken cancellationToken) =>
+            HandleErrorQueues(filter, true, cancellationToken);
+
+
+        public Task<int> CleanupErrorQueues(string? filter, CancellationToken cancellationToken) =>
+            HandleErrorQueues(filter, false, cancellationToken);
+
+        private async Task<int> HandleErrorQueues(string? filter, bool republish, CancellationToken cancellationToken)
         {
-            Lazy<Task>? publisherTask = default;
-            try
+            if (string.IsNullOrWhiteSpace(filter))
+                filter = Regex.Escape(NamingConvention.DeadletterQueuePostfix);
+            else if (!filter.Contains(NamingConvention.DeadletterQueuePostfix))
+                filter = $"{Regex.Escape(filter)}.*{Regex.Escape(NamingConvention.DeadletterQueuePostfix)}$";
+            else
+                filter = Regex.Escape(filter);
+
+            int count = 0;
+            IChannel? channel = default;
+            var queues = await _rabbitMqManager.GetQueueStats(filter, cancellationToken);
+            foreach (var queue in queues)
             {
-                publisherTask = _topics.GetOrAdd(topic, t => new Lazy<Task>(async () =>
+                channel ??= await _rabbitMQClient.GetSenderChannel();
+
+                BasicGetResult? result;
+                while ((result = await channel.BasicGetAsync(queue.Name, false, cancellationToken)) != null)
                 {
-                    await _rabbitMQClient.CreateTopic(await GetChannel(), topic, cancellationToken);
-                }));
-                await publisherTask.Value;
-            }
-            catch
-            {
-                if (publisherTask != null)
-                    _topics.TryRemove(new KeyValuePair<string, Lazy<Task>>(topic, publisherTask));
-            }
-        }
+                    if (republish)
+                    {
+                        var originalRoutingKey = result.BasicProperties.Headers?
+                                .TryGetValue(NamingConvention.DeadletterRoutingKeyHeader, out var rawHeaderValue) == true
+                                && rawHeaderValue is byte[] rawKey
+                                    ? Encoding.UTF8.GetString(rawKey)
+                                    : "";
 
-        private async Task CreateQueueue(string queueName, CancellationToken cancellationToken)
-        {
-            Lazy<Task>? publisherTask = default;
-            try
-            {
-                publisherTask = _queues.GetOrAdd(queueName, t => new Lazy<Task>(async () =>
-                {
-                    await _rabbitMQClient.CreateQueue(await GetChannel(), queueName, cancellationToken);
-                }));
-                await publisherTask.Value;
+                        var properties = new BasicProperties(result.BasicProperties)
+                        {
+                            Headers = new Dictionary<string, object?>(result.BasicProperties.Headers ?? new Dictionary<string, object?>()),
+                            Persistent = true,
+                            DeliveryMode = DeliveryModes.Persistent
+                        };
+
+                        properties.Headers.Remove(NamingConvention.DeadletterRoutingKeyHeader);
+                        properties.Headers[NamingConvention.RediliveryCountHeader] = "0";
+
+                        await channel.BasicPublishAsync(queue.Name.Substring(0, queue.Name.Length - NamingConvention.DeadletterQueuePostfix.Length), originalRoutingKey, result.Body, cancellationToken);
+                    }
+                    await channel.BasicAckAsync(result.DeliveryTag, false, cancellationToken);
+                    count++;
+                }
             }
-            catch
-            {
-                if (publisherTask != null)
-                    _topics.TryRemove(new KeyValuePair<string, Lazy<Task>>(queueName, publisherTask));
-            }
-        }
 
-        private async Task<IChannel> GetChannel()
-        {
-            if (_channel != null && _channel.IsOpen)
-                return _channel;
-
-            await _channelLock.WaitAsync();
-
-            try
-            {
-                if (_channel != null && _channel.IsOpen)
-                    return _channel;
-
-                return _channel = await _rabbitMQClient.CreateChannel();
-            }
-            finally
-            {
-                _channelLock.Release();
-            }
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            _channelLock.Dispose();
-            return _channel?.DisposeAsync() ?? default;
+            return count;
         }
     }
 }

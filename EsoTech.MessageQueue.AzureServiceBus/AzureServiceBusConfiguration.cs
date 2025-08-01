@@ -7,6 +7,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
     {
         public string? ConnectionStringName { get; set; }
         public string? ConnectionString { get; set; }
+        public string? AdministrativeConnectionString { get; set; }
         public int MaxDeliveryCount { get; set; } = 20;
         public long MaxSizeInMB { get; internal set; } = 5 * 1024;
         public TimeSpan DefaultMessageTimeToLive { get; internal set; } = TimeSpan.FromDays(14);

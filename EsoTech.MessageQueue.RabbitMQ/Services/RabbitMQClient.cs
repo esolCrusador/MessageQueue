@@ -4,25 +4,24 @@ using RabbitMQ.Client;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net.Http.Headers;
-using System.Net.Http;
-using System.Text;
-using System.Text.Json;
 using System.Threading.Tasks;
 using System.Threading;
 using System.Net.Security;
-using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Logging;
 
-namespace EsoTech.MessageQueue.RabbitMQ
+namespace EsoTech.MessageQueue.RabbitMQ.Services
 {
     public class RabbitMQClient : IAsyncDisposable
     {
         private readonly RabbitMQConnectionConfiguration _connection;
         private readonly string _virtualHost;
         private readonly ConnectionFactory _factory;
+        private readonly RabbitMqManagement _rabbitMqManager;
         private readonly ILogger<RabbitMQClient> _logger;
         private Task<IConnection> _connectionTask;
+
+        private SemaphoreSlim _senderChannelLock = new SemaphoreSlim(1);
+        private IChannel? _senderChannel;
 
         public async Task<IChannel> CreateChannel()
         {
@@ -32,15 +31,36 @@ namespace EsoTech.MessageQueue.RabbitMQ
             }
             catch (OperationInterruptedException ex) when (ex.Message.Contains($"NOT_ALLOWED - vhost {_virtualHost} not found"))
             {
-                await CreateVirtualHost(default);
+                await _rabbitMqManager.CreateVirtualHost(default);
                 return await CreateChannel();
             }
         }
 
-        public RabbitMQClient(IOptions<RabbitMQConfiguration> options, ILogger<RabbitMQClient> logger)
+        public async Task<IChannel> GetSenderChannel()
+        {
+            if (_senderChannel != null && _senderChannel.IsOpen)
+                return _senderChannel;
+
+            await _senderChannelLock.WaitAsync();
+
+            try
+            {
+                if (_senderChannel != null && _senderChannel.IsOpen)
+                    return _senderChannel;
+
+                return _senderChannel = await CreateChannel();
+            }
+            finally
+            {
+                _senderChannelLock.Release();
+            }
+        }
+
+        public RabbitMQClient(RabbitMqManagement rabbitMqManager, IOptions<RabbitMQConfiguration> options, ILogger<RabbitMQClient> logger)
         {
             _connection = options.Value.Connection;
             _virtualHost = _connection.VirtualHost;
+            _rabbitMqManager = rabbitMqManager;
             _logger = logger;
 
             _factory = new ConnectionFactory
@@ -61,7 +81,7 @@ namespace EsoTech.MessageQueue.RabbitMQ
                 if (_connection.IgnoreSslErrors)
                 {
                     _factory.Ssl.AcceptablePolicyErrors = SslPolicyErrors.RemoteCertificateChainErrors | SslPolicyErrors.RemoteCertificateNameMismatch;
-                    _factory.Ssl.CertificateValidationCallback = (object sender, X509Certificate? certificate, X509Chain? chain, SslPolicyErrors sslPolicyErrors) =>
+                    _factory.Ssl.CertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) =>
                     {
                         if (sslPolicyErrors != SslPolicyErrors.None)
                             _logger.LogWarning($"Error during RabbitMQ certificate validation");
@@ -74,80 +94,13 @@ namespace EsoTech.MessageQueue.RabbitMQ
             _connectionTask = _factory.CreateConnectionAsync();
         }
 
-        private SemaphoreSlim _virtualHostLock = new SemaphoreSlim(1);
-        public async Task CreateVirtualHost(CancellationToken cancellationToken)
-        {
-            await _virtualHostLock.WaitAsync(cancellationToken);
-
-            try
-            {
-                var managementPort = _connection.ManagementPort;
-                var managementHost = _connection.Host;
-
-                using var handler = new HttpClientHandler();
-                if (_connection.IgnoreSslErrors)
-                    handler.ServerCertificateCustomValidationCallback = (httpRequestMessage, cert, chain, sslPolicyErrors) =>
-                    {
-                        if (sslPolicyErrors != SslPolicyErrors.None)
-                            _logger.LogWarning($"Error during RabbitMQ certificate validation");
-
-                        return true;
-                    };
-
-                using var httpClient = new HttpClient(handler)
-                {
-                    BaseAddress = new Uri($"http{(_connection.UseSsl ? "s" : "")}://{managementHost}:{managementPort}")
-                };
-
-                var authValue = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{_connection.User}:{_connection.Password}"));
-                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", authValue);
-
-                using var createVhostResponse = await httpClient.PutAsync(
-                     $"api/vhosts/{Uri.EscapeDataString(_virtualHost)}",
-                     null,
-                     cancellationToken
-                );
-
-                if (!createVhostResponse.IsSuccessStatusCode)
-                {
-                    var errorContent = await createVhostResponse.Content.ReadAsStringAsync();
-                    throw new InvalidOperationException($"Failed to create vhost: {createVhostResponse.StatusCode} - {errorContent}");
-                }
-
-                // Set permissions
-                using var permContent = new StringContent(
-                    JsonSerializer.Serialize(new
-                    {
-                        configure = ".*",
-                        write = ".*",
-                        read = ".*"
-                    }),
-                    Encoding.UTF8,
-                    "application/json");
-
-                using var permResponse = await httpClient.PutAsync(
-                    $"api/permissions/" +
-                    $"{Uri.EscapeDataString(_virtualHost)}/{_connection.User}",
-                    permContent, cancellationToken);
-
-                if (!permResponse.IsSuccessStatusCode)
-                {
-                    var errorContent = await permResponse.Content.ReadAsStringAsync();
-                    throw new InvalidOperationException($"Failed to set permissions: {permResponse.StatusCode} - {errorContent}");
-                }
-            }
-            finally
-            {
-                _virtualHostLock.Release();
-            }
-        }
-
         private static async Task<IChannel> CreateChannel(Task<IConnection> connection) => await (await connection).CreateChannelAsync();
 
         public async ValueTask DisposeAsync()
         {
             await (await _connectionTask).DisposeAsync();
-            _virtualHostLock.Dispose();
+            await (_senderChannel?.DisposeAsync() ?? default);
+            _senderChannelLock.Dispose();
         }
 
         public Task CreateTopic(IChannel channel, string topicName, CancellationToken cancellationToken) =>
@@ -178,7 +131,7 @@ namespace EsoTech.MessageQueue.RabbitMQ
 
         public async Task<string> CreateDeadletterQueue(IChannel channel, string queueName, CancellationToken cancellationToken)
         {
-            var deadletterQueueName = $"{queueName}-deadletter";
+            var deadletterQueueName = $"{queueName}{NamingConvention.DeadletterQueuePostfix}";
 
             await CreateQueue(channel, deadletterQueueName, cancellationToken);
             await channel.QueueDeclareAsync(deadletterQueueName, durable: true, exclusive: false, autoDelete: false, cancellationToken: cancellationToken);

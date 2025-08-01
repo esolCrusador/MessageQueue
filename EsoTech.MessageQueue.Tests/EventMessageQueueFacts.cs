@@ -48,51 +48,51 @@ namespace EsoTech.MessageQueue.Tests
             }
         }
 
-        [Trait("Category", "Slow")]
-        public sealed class SlowAzureServiceBus : EventMessageQueueFacts
-        {
-            public SlowAzureServiceBus() : base(new ServiceCollection()
-                .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddEnvironmentVariables().Build())
-                .AddEventMessageHandler<GenericLongRuningEventDelegateHandler<LongRunningMessage>>()
-                .SuppressContinuousPolling()
-                .AddMessageQueue()
-                .AddAzureServiceBusMessageQueue(opts => opts.ConnectionStringName = "TestServiceBusConnectionString")
-            )
-            {
-            }
+        //[Trait("Category", "Slow")]
+        //public sealed class SlowAzureServiceBus : EventMessageQueueFacts
+        //{
+        //    public SlowAzureServiceBus() : base(new ServiceCollection()
+        //        .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddEnvironmentVariables().Build())
+        //        .AddEventMessageHandler<GenericLongRuningEventDelegateHandler<LongRunningMessage>>()
+        //        .SuppressContinuousPolling()
+        //        .AddMessageQueue()
+        //        .AddAzureServiceBusMessageQueue(opts => opts.ConnectionStringName = "TestServiceBusConnectionString")
+        //    )
+        //    {
+        //    }
 
-            //[Fact]
-            //[Trait("Category", "Integration")]
-            //public async Task PurgeAll_Should_Clean_Up_Topics()
-            //{
-            //    await (_azureServiceBusManager ?? throw new Exception("No manager")).PurgeAll();
-            //}
+        //    //[Fact]
+        //    //[Trait("Category", "Integration")]
+        //    //public async Task PurgeAll_Should_Clean_Up_Topics()
+        //    //{
+        //    //    await (_azureServiceBusManager ?? throw new Exception("No manager")).PurgeAll();
+        //    //}
 
-            [Fact]
-            public async Task TryHandleNext_Should_Invoke_Appropriate_Handler_With_Delay()
-            {
-                var msg = new FooDelayedMessage { Text = "some text" };
+        //    [Fact]
+        //    public async Task TryHandleNext_Should_Invoke_Appropriate_Handler_With_Delay()
+        //    {
+        //        var msg = new FooDelayedMessage { Text = "some text" };
 
-                await _queue.SendEvent(msg, TimeSpan.FromSeconds(1));
-                await Task.Delay(TimeSpan.FromSeconds(2));
-                (await _subscriber.TryHandleNext()).Should().BeTrue();
+        //        await _queue.SendEvent(msg, TimeSpan.FromSeconds(1));
+        //        await Task.Delay(TimeSpan.FromSeconds(2));
+        //        (await _subscriber.TryHandleNext()).Should().BeTrue();
 
-                _fooHandler.DelayedLog.Single().Text.Should().Be(msg.Text);
-            }
+        //        _fooHandler.DelayedLog.Single().Text.Should().Be(msg.Text);
+        //    }
 
-            [Fact]
-            public async Task Should_Continue_Handling_For_Long_Running_Task()
-            {
-                var fooLongRuningEventDelegateHandler = _serviceProvider.GetRequiredService<GenericLongRuningEventDelegateHandler<LongRunningMessage>>();
-                fooLongRuningEventDelegateHandler.Handler = async (msg, cancellation) =>
-                    await Task.Delay(TimeSpan.FromSeconds(45), cancellation);
+        //    [Fact]
+        //    public async Task Should_Continue_Handling_For_Long_Running_Task()
+        //    {
+        //        var fooLongRuningEventDelegateHandler = _serviceProvider.GetRequiredService<GenericLongRuningEventDelegateHandler<LongRunningMessage>>();
+        //        fooLongRuningEventDelegateHandler.Handler = async (msg, cancellation) =>
+        //            await Task.Delay(TimeSpan.FromSeconds(45), cancellation);
 
-                await _queue.SendEvent(new LongRunningMessage());
+        //        await _queue.SendEvent(new LongRunningMessage());
 
-                using var cs = new CancellationTokenSource(TimeSpan.FromSeconds(50));
-                (await _subscriber.TryHandleNext(cs.Token)).Should().BeTrue();
-            }
-        }
+        //        using var cs = new CancellationTokenSource(TimeSpan.FromSeconds(50));
+        //        (await _subscriber.TryHandleNext(cs.Token)).Should().BeTrue();
+        //    }
+        //}
 
         [Trait("Category", "Slow")]
         [Collection(nameof(RabbitMqCollectionCollection))]

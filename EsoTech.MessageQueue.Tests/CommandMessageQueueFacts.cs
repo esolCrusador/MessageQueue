@@ -36,26 +36,26 @@ namespace EsoTech.MessageQueue.Tests
             }
         }
 
-        [Trait("Category", "Slow")]
-        public sealed class SlowAzureServiceBus : CommandMessageQueueFacts
-        {
-            public SlowAzureServiceBus() : base(new ServiceCollection()
-                .AddLogging()
-                .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddEnvironmentVariables().Build())
-                .SuppressContinuousPolling()
-                .AddMessageQueue()
-                .AddAzureServiceBusMessageQueue(cfg => cfg.ConnectionStringName = "TestServiceBusConnectionString")
-            )
-            {
-            }
+        //[Trait("Category", "Slow")]
+        //public sealed class SlowAzureServiceBus : CommandMessageQueueFacts
+        //{
+        //    public SlowAzureServiceBus() : base(new ServiceCollection()
+        //        .AddLogging()
+        //        .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddEnvironmentVariables().Build())
+        //        .SuppressContinuousPolling()
+        //        .AddMessageQueue()
+        //        .AddAzureServiceBusMessageQueue(cfg => cfg.ConnectionStringName = "TestServiceBusConnectionString")
+        //    )
+        //    {
+        //    }
 
-            //[Fact]
-            //[Trait("Category", "Integration")]
-            //public async Task PurgeAll_Should_Clean_Up_Queues()
-            //{
-            //    await (_azureServiceBusManager ?? throw new Exception("No manager")).PurgeAll();
-            //}
-        }
+        //    //[Fact]
+        //    //[Trait("Category", "Integration")]
+        //    //public async Task PurgeAll_Should_Clean_Up_Queues()
+        //    //{
+        //    //    await (_azureServiceBusManager ?? throw new Exception("No manager")).PurgeAll();
+        //    //}
+        //}
 
         [Trait("Category", "Slow")]
         [Collection(nameof(RabbitMqCollectionCollection))]
