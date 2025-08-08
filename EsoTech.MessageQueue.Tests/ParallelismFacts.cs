@@ -1,18 +1,20 @@
 ﻿using EsoTech.MessageQueue.Abstractions;
 using EsoTech.MessageQueue.AzureServiceBus;
+using EsoTech.MessageQueue.RabbitMQ;
 using EsoTech.MessageQueue.Testing;
 using EsoTech.MessageQueue.Tests.EventHandlers;
 using EsoTech.MessageQueue.Tests.Messages;
-using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System;
-using System.Threading;
+using System.Collections.Concurrent;
+using System.Linq;
 using System.Threading.Tasks;
 using Xunit;
 
 namespace EsoTech.MessageQueue.Tests
 {
-    public abstract class RetryFacts : IAsyncLifetime
+    public abstract class ParallelismFacts : IAsyncLifetime
     {
         private readonly ServiceProvider _serviceProvier;
         private readonly IMessageConsumer _subscriber;
@@ -41,7 +43,7 @@ namespace EsoTech.MessageQueue.Tests
                     .AddEventMessageHandler<FooEventHandler>();
         }
 
-        private RetryFacts(IServiceCollection services)
+        private ParallelismFacts(IServiceCollection services)
         {
             ConfigureCommonServices(services);
             var serviceProvider = services.BuildServiceProvider();
@@ -53,6 +55,42 @@ namespace EsoTech.MessageQueue.Tests
             _azureServiceBusManager = serviceProvider.GetService<AzureServiceBusManager>();
             _queue = serviceProvider.GetRequiredService<IMessageQueue>();
         }
+
+        //[Trait("Category", "Slow")]
+        //public sealed class SlowAzureServiceBus : CommandMessageQueueFacts
+        //{
+        //    public SlowAzureServiceBus() : base(new ServiceCollection()
+        //        .AddLogging()
+        //        .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddEnvironmentVariables().Build())
+        //        .SuppressContinuousPolling()
+        //        .AddMessageQueue()
+        //        .AddAzureServiceBusMessageQueue(cfg => cfg.ConnectionStringName = "TestServiceBusConnectionString")
+        //    )
+        //    {
+        //    }
+
+        //    //[Fact]
+        //    //[Trait("Category", "Integration")]
+        //    //public async Task PurgeAll_Should_Clean_Up_Queues()
+        //    //{
+        //    //    await (_azureServiceBusManager ?? throw new Exception("No manager")).PurgeAll();
+        //    //}
+        //}
+
+        [Trait("Category", "Slow")]
+        [Collection(nameof(RabbitMqCollectionCollection))]
+        public sealed class SlowRabbit : ParallelismFacts
+        {
+            public SlowRabbit(RabbitMqTestFixture rabbitMqTestFixture) : base(new ServiceCollection()
+                .AddLogging()
+                .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddEnvironmentVariables().Build())
+                .AddMessageQueue()
+                .AddRabbitMq(rabbitMqTestFixture.Configure)
+            )
+            {
+            }
+        }
+
 
 
         public async Task InitializeAsync()
@@ -73,41 +111,19 @@ namespace EsoTech.MessageQueue.Tests
         public async Task Should_Handle_By_Only_Failed_Handler()
         {
             var text = Guid.NewGuid().ToString("n");
-            _fooDelegateHandler.Handler = (_, _) => Task.FromException(new Exception());
-            await _queue.SendEvent(new FooMsg { Text = text });
-            using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(1)))
-                (await _subscriber.TryHandleNext(cancellation.Token)).Should().BeFalse();
+            var subject = new TaskCompletionSource();
 
-            _fooHandler.Log.Should().BeEquivalentTo(new[] { new FooMsg { Text = text } });
-            _fooDelegateHandler.Log.Should().BeEmpty();
+            ConcurrentBag<string> receivedMessages = new();
+            _fooDelegateHandler.Handler = async (m, _) =>
+            {
+                receivedMessages.Add(m.Text!);
+                await subject.Task;
+            };
+            await _queue.SendEvent(new FooMsg { Text = "Message1" });
+            await _queue.SendEvent(new FooMsg { Text = "Message2" });
 
-            _fooDelegateHandler.ResetHandler();
-            (await _subscriber.TryHandleNext()).Should().BeTrue();
-            _fooDelegateHandler.Log.Should().BeEquivalentTo(new[] { new FooMsg { Text = text } });
-            _fooHandler.Log.Should().BeEquivalentTo(new[] { new FooMsg { Text = text } });
-        }
 
-        [Fact]
-        public async Task Should_Handle_Only_Once_In_Case_Of_Failure()
-        {
-            _fooDelegateHandler.Handler = (_, _) => Task.FromException(new Exception());
-            await _queue.SendEvent(new FooMsg { Text = "123" });
-            using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(1)))
-                (await _subscriber.TryHandleNext(cancellation.Token)).Should().BeFalse();
-
-            _fooHandler.Log.Should().BeEquivalentTo(new[] { new FooMsg { Text = "123" } });
-            _fooDelegateHandler.Log.Should().BeEmpty();
-
-            using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(1)))
-                (await _subscriber.TryHandleNext(cancellation.Token)).Should().BeFalse();
-
-            _fooHandler.Log.Should().BeEquivalentTo(new[] { new FooMsg { Text = "123" } });
-            _fooDelegateHandler.Log.Should().BeEmpty();
-
-            _fooDelegateHandler.ResetHandler();
-            (await _subscriber.TryHandleNext()).Should().BeTrue();
-            _fooDelegateHandler.Log.Should().BeEquivalentTo(new[] { new FooMsg { Text = "123" } });
-            _fooHandler.Log.Should().BeEquivalentTo(new[] { new FooMsg { Text = "123" } });
+            await MessageQueueTestContext.Wait(() => receivedMessages.Contains("Message1") && receivedMessages.Contains("Message2"));
         }
     }
 }

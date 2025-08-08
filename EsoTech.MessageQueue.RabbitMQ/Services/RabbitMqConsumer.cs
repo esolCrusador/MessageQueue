@@ -16,6 +16,7 @@ using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
 using EsoTech.MessageQueue.Extensions;
 using EsoTech.MessageQueue.RabbitMQ.Serialization;
+using System.Threading.Channels;
 
 namespace EsoTech.MessageQueue.RabbitMQ.Services
 {
@@ -183,7 +184,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                     reconnects++;
 
                     channel = await _rabbitMQClient.CreateChannel();
-                    await channel.BasicQosAsync(0, (ushort)_messagingOptions.MaxConcurrentMessages, false);
+                    await channel.BasicQosAsync(0, (ushort)int.Min(ushort.MaxValue, _messagingOptions.MaxConcurrentMessages * 2), false);
 
                     channel.ChannelShutdownAsync += (sender, @event) =>
                     {
@@ -210,77 +211,18 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
 
                         return Task.CompletedTask;
                     };
+                    using var parallelism = new SemaphoreSlim(_messagingOptions.MaxConcurrentMessages);
                     consumer.ReceivedAsync += async (sender, args) =>
                     {
-                        var started = DateTimeOffset.UtcNow;
-                        string? messageText = null;
-
-                        try
-                        {
-                            var message = _messageSerializer.Deserialize(args.Body.Span);
-                            messageText = _messageSerializer.SerializeToString(message, typeof(Message));
-                            _logger.LogInformation("Handling message {Message}", messageText);
-
-                            await WaitBeforeHandle;
-
-                            foreach (var handler in messageHandlers[message.Payload!.GetType()])
-                                await handler(message.Payload, args.CancellationToken);
-
-                            await channel.BasicAckAsync(args.DeliveryTag, false);
-
-                            _handled?.OnNext(Unit.Default);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "Consumer failed {Subscrription}", subscriptionFactory.Name);
-
-                            int rediliveryCount = 0;
-                            if (args.BasicProperties.Headers?.TryGetValue(NamingConvention.RediliveryCountHeader, out var redeliveryCountObj) == true)
-                                rediliveryCount = int.Parse(Encoding.UTF8.GetString((byte[])redeliveryCountObj!));
-                            rediliveryCount++;
-
-                            var properties = new BasicProperties(args.BasicProperties)
+                        await parallelism.WaitAsync(cancellationToken);
+                        var _ = HandleMessage(parallelism, channel, subscriptionFactory.Name, args, messageHandlers, cancellationToken)
+                            .ContinueWith(task =>
                             {
-                                Headers = new Dictionary<string, object?>(args.BasicProperties.Headers ?? new Dictionary<string, object?>()),
-                                Persistent = true,
-                                DeliveryMode = DeliveryModes.Persistent
-                            };
-                            if (rediliveryCount >= _options.MaxDeliveryCount)
-                            {
-                                var deadLetterQueue = await _queueFactory.CreateDeadLetterQueueue(subscriptionFactory.Name, cancellationToken);
-
-                                properties.Headers[NamingConvention.DeadletterRoutingKeyHeader] = args.RoutingKey;
-                                _logger.LogWarning("Sending message {Message} to deadletter queue after {Retries} retries", messageText, rediliveryCount);
-                                await channel.BasicPublishAsync(
-                                    deadLetterQueue,
-                                    "",
-                                    true,
-                                    properties,
-                                    body: args.Body,
-                                    cancellationToken
-                                );
-                            }
-                            else
-                            {
-                                var delayBeforeNack = _messagingOptions.AckTimeout - (DateTimeOffset.UtcNow - started);
-                                if (delayBeforeNack > TimeSpan.Zero)
-                                    await Task.Delay(delayBeforeNack, args.CancellationToken);
-
-                                properties.Headers[NamingConvention.RediliveryCountHeader] = Encoding.UTF8.GetBytes(rediliveryCount.ToString());
-
-                                _logger.LogWarning("Republishing message {Message}. Retries: {Retries}", messageText, rediliveryCount);
-                                await channel.BasicPublishAsync(
-                                    subscriptionFactory.Name,
-                                    args.RoutingKey,
-                                    true,
-                                    properties,
-                                    body: args.Body
-                                );
-                            }
-
-                            await channel.BasicAckAsync(args.DeliveryTag, false);
-                        }
+                                if (task.IsFaulted)
+                                    _logger.LogCritical(task.Exception.Flatten().InnerException ?? task.Exception, $"{nameof(HandleMessage)} has failed");
+                            });
                     };
+
 
                     var startedConsumer = await channel.BasicConsumeAsync(subscriptionFactory.Name, false, consumer);
 
@@ -312,6 +254,80 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                 {
                     await (channel?.DisposeAsync() ?? default);
                 }
+            }
+        }
+
+        private async Task HandleMessage(SemaphoreSlim parallelism, IChannel channel, string subscriptionName, BasicDeliverEventArgs args, Dictionary<Type, List<Func<object, CancellationToken, Task>>> messageHandlers, CancellationToken cancellationToken)
+        {
+            var started = DateTimeOffset.UtcNow;
+            string? messageText = null;
+
+            try
+            {
+                var message = _messageSerializer.Deserialize(args.Body.Span);
+                messageText = _messageSerializer.SerializeToString(message, typeof(Message));
+                _logger.LogInformation("Handling message {Message}", messageText);
+
+                await WaitBeforeHandle;
+
+                foreach (var handler in messageHandlers[message.Payload!.GetType()])
+                    await handler(message.Payload, args.CancellationToken);
+
+                await channel.BasicAckAsync(args.DeliveryTag, false);
+
+                _handled?.OnNext(Unit.Default);
+                parallelism.Release();
+            }
+            catch (Exception ex)
+            {
+                parallelism.Release();
+                _logger.LogError(ex, "Consumer failed {Subscrription}", subscriptionName);
+
+                int rediliveryCount = 0;
+                if (args.BasicProperties.Headers?.TryGetValue(NamingConvention.RediliveryCountHeader, out var redeliveryCountObj) == true)
+                    rediliveryCount = int.Parse(Encoding.UTF8.GetString((byte[])redeliveryCountObj!));
+                rediliveryCount++;
+
+                var properties = new BasicProperties(args.BasicProperties)
+                {
+                    Headers = new Dictionary<string, object?>(args.BasicProperties.Headers ?? new Dictionary<string, object?>()),
+                    Persistent = true,
+                    DeliveryMode = DeliveryModes.Persistent
+                };
+                if (rediliveryCount >= _options.MaxDeliveryCount)
+                {
+                    var deadLetterQueue = await _queueFactory.CreateDeadLetterQueueue(subscriptionName, cancellationToken);
+
+                    properties.Headers[NamingConvention.DeadletterRoutingKeyHeader] = args.RoutingKey;
+                    _logger.LogWarning("Sending message {Message} to deadletter queue after {Retries} retries", messageText, rediliveryCount);
+                    await channel.BasicPublishAsync(
+                        deadLetterQueue,
+                        "",
+                        true,
+                        properties,
+                        body: args.Body,
+                        cancellationToken
+                    );
+                }
+                else
+                {
+                    var delayBeforeNack = _messagingOptions.AckTimeout - (DateTimeOffset.UtcNow - started);
+                    if (delayBeforeNack > TimeSpan.Zero)
+                        await Task.Delay(delayBeforeNack, args.CancellationToken);
+
+                    properties.Headers[NamingConvention.RediliveryCountHeader] = Encoding.UTF8.GetBytes(rediliveryCount.ToString());
+
+                    _logger.LogWarning("Republishing message {Message}. Retries: {Retries}", messageText, rediliveryCount);
+                    await channel.BasicPublishAsync(
+                        subscriptionName,
+                        args.RoutingKey,
+                        true,
+                        properties,
+                        body: args.Body
+                    );
+                }
+
+                await channel.BasicAckAsync(args.DeliveryTag, false);
             }
         }
 

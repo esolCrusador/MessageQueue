@@ -72,10 +72,10 @@ namespace EsoTech.MessageQueue.Tests
             };
             await _serviceProvider.GetRequiredService<IMessageQueue>().SendEvent(new FooMsg());
 
-            await Wait(() => delivers == MaxDeliveryCount);
+            await MessageQueueTestContext.Wait(() => delivers == MaxDeliveryCount);
 
             var management = _serviceProvider.GetRequiredService<RabbitMqManagement>();
-            await Wait(async () => (await management.GetDeadletterQueueStats(default)).Any(q => q.MessagesCount == 1));
+            await MessageQueueTestContext.Wait(async () => (await management.GetDeadletterQueueStats(default)).Any(q => q.MessagesCount == 1));
         }
 
         [Fact]
@@ -89,12 +89,12 @@ namespace EsoTech.MessageQueue.Tests
             };
             await _serviceProvider.GetRequiredService<IMessageQueue>().SendEvent(new FooMsg());
 
-            await Wait(() => delivers == MaxDeliveryCount);
+            await MessageQueueTestContext.Wait(() => delivers == MaxDeliveryCount);
 
             var mq = _serviceProvider.GetRequiredService<RabbitMqMessageQueue>();
-            await Wait(async () => (await mq.RepublishErrorQueues(null, default)) > 0);
+            await MessageQueueTestContext.Wait(async () => (await mq.RepublishErrorQueues(null, default)) > 0);
 
-            await Wait(() => delivers == MaxDeliveryCount * 2);
+            await MessageQueueTestContext.Wait(() => delivers == MaxDeliveryCount * 2);
         }
 
 
@@ -109,13 +109,13 @@ namespace EsoTech.MessageQueue.Tests
             };
             await _serviceProvider.GetRequiredService<IMessageQueue>().SendEvent(new FooMsg());
 
-            await Wait(() => delivers == MaxDeliveryCount);
+            await MessageQueueTestContext.Wait(() => delivers == MaxDeliveryCount);
 
             var mq = _serviceProvider.GetRequiredService<RabbitMqMessageQueue>();
-            await Wait(async () => (await mq.CleanupErrorQueues(null, default)) > 0);
+            await MessageQueueTestContext.Wait(async () => (await mq.CleanupErrorQueues(null, default)) > 0);
 
             var management = _serviceProvider.GetRequiredService<RabbitMqManagement>();
-            await Wait(async () => (await management.GetDeadletterQueueStats(default)).Any(q => q.MessagesCount == 0));
+            await MessageQueueTestContext.Wait(async () => (await management.GetDeadletterQueueStats(default)).Any(q => q.MessagesCount == 0));
         }
 
         [Fact]
@@ -129,7 +129,7 @@ namespace EsoTech.MessageQueue.Tests
             };
             await _serviceProvider.GetRequiredService<IMessageQueue>().SendEvent(new FooMsg());
 
-            await Wait(() => delivers == MaxDeliveryCount);
+            await MessageQueueTestContext.Wait(() => delivers == MaxDeliveryCount);
 
             DelegateHandler.Handler = (ev, cancellation) =>
             {
@@ -138,30 +138,9 @@ namespace EsoTech.MessageQueue.Tests
             };
 
             var mq = _serviceProvider.GetRequiredService<RabbitMqMessageQueue>();
-            await Wait(async () => (await mq.RepublishErrorQueues(null, default)) > 0);
+            await MessageQueueTestContext.Wait(async () => (await mq.RepublishErrorQueues(null, default)) > 0);
 
-            await Wait(() => delivers == MaxDeliveryCount + 1);
-        }
-
-        private async ValueTask Wait(Func<ValueTask<bool>> condition, TimeSpan? timeout = default)
-        {
-            timeout ??= Debugger.IsAttached ? TimeSpan.FromMinutes(1) : TimeSpan.FromSeconds(5);
-            var endDate = DateTimeOffset.UtcNow + timeout;
-
-            while (DateTimeOffset.UtcNow < endDate)
-            {
-                if (await condition())
-                    return;
-
-                await Task.Delay(timeout.Value / 50);
-            }
-
-            throw new TimeoutException($"Timeout {timeout} has passed");
-        }
-
-        private ValueTask Wait(Func<bool> condition, TimeSpan? timeout = default)
-        {
-            return Wait(() => new ValueTask<bool>(condition()), timeout);
+            await MessageQueueTestContext.Wait(() => delivers == MaxDeliveryCount + 1);
         }
     }
 }
