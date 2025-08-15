@@ -9,7 +9,9 @@ namespace EsoTech.MessageQueue.RabbitMQ
         public Dictionary<string, string> ServicesRemap { get; set; } = new Dictionary<string, string>();
         public int MaxConnectionRetries { get; set; } = int.MaxValue;
         public TimeSpan ReconnectTimeout { get; set; } = TimeSpan.FromSeconds(5);
-        public int SendingParallelism { get; set; } = 100;
+        public int SendingParallelism { get; set; } = 20;
+        public int SendersPool { get; set; } = 5;
+        public int InitializationParallelism { get; set; } = 20;
         public int MaxDeliveryCount { get; set; } = 20;
     }
     public class RabbitMQConnectionConfiguration

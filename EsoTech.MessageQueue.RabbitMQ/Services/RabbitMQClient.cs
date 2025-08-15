@@ -17,50 +17,16 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
         private readonly string _virtualHost;
         private readonly ConnectionFactory _factory;
         private readonly RabbitMqManagement _rabbitMqManager;
+        private readonly ChannelsPool _channelsPool;
         private readonly ILogger<RabbitMQClient> _logger;
         private Task<IConnection> _connectionTask;
-
-        private SemaphoreSlim _senderChannelLock = new SemaphoreSlim(1);
-        private IChannel? _senderChannel;
-
-        public async Task<IChannel> CreateChannel()
-        {
-            try
-            {
-                return await (await _connectionTask).CreateChannelAsync();
-            }
-            catch (OperationInterruptedException ex) when (ex.Message.Contains($"NOT_ALLOWED - vhost {_virtualHost} not found"))
-            {
-                await _rabbitMqManager.CreateVirtualHost(default);
-                return await CreateChannel();
-            }
-        }
-
-        public async Task<IChannel> GetSenderChannel()
-        {
-            if (_senderChannel != null && _senderChannel.IsOpen)
-                return _senderChannel;
-
-            await _senderChannelLock.WaitAsync();
-
-            try
-            {
-                if (_senderChannel != null && _senderChannel.IsOpen)
-                    return _senderChannel;
-
-                return _senderChannel = await CreateChannel();
-            }
-            finally
-            {
-                _senderChannelLock.Release();
-            }
-        }
 
         public RabbitMQClient(RabbitMqManagement rabbitMqManager, IOptions<RabbitMQConfiguration> options, ILogger<RabbitMQClient> logger)
         {
             _connection = options.Value.Connection;
             _virtualHost = _connection.VirtualHost;
             _rabbitMqManager = rabbitMqManager;
+            _channelsPool = new ChannelsPool(options.Value.SendersPool);
             _logger = logger;
 
             _factory = new ConnectionFactory
@@ -94,13 +60,26 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             _connectionTask = _factory.CreateConnectionAsync();
         }
 
+        public async Task<IChannel> CreateChannel()
+        {
+            try
+            {
+                return await (await _connectionTask).CreateChannelAsync();
+            }
+            catch (OperationInterruptedException ex) when (ex.Message.Contains($"NOT_ALLOWED - vhost {_virtualHost} not found"))
+            {
+                await _rabbitMqManager.CreateVirtualHost(default);
+                return await CreateChannel();
+            }
+        }
+
+        public Task<ChannelsPool.ChannelLock> CaptureSenderChannel() => _channelsPool.CaptureChannel(CreateChannel, default);
         private static async Task<IChannel> CreateChannel(Task<IConnection> connection) => await (await connection).CreateChannelAsync();
 
         public async ValueTask DisposeAsync()
         {
+            await _channelsPool.DisposeAsync();
             await (await _connectionTask).DisposeAsync();
-            await (_senderChannel?.DisposeAsync() ?? default);
-            _senderChannelLock.Dispose();
         }
 
         public Task CreateTopic(IChannel channel, string topicName, CancellationToken cancellationToken) =>

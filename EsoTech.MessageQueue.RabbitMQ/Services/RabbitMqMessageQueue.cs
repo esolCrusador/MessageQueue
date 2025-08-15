@@ -95,7 +95,9 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
         {
             var messageType = message.GetType();
             var routingKey = _routingKeys.GetOrAdd(messageType, _namingConvention.GetRoutingKey);
-            var channel = await _rabbitMQClient.GetSenderChannel();
+
+            await using var channelLock = await _rabbitMQClient.CaptureSenderChannel();
+            var channel = channelLock.Channel;
 
             await channel.BasicPublishAsync(destanation, routingKey, true,
             new BasicProperties
@@ -134,38 +136,47 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                 filter = Regex.Escape(filter);
 
             int count = 0;
-            IChannel? channel = default;
-            var queues = await _rabbitMqManager.GetQueueStats(filter, cancellationToken);
-            foreach (var queue in queues)
+            ChannelsPool.ChannelLock? channelLock = default;
+
+            try
             {
-                channel ??= await _rabbitMQClient.GetSenderChannel();
-
-                BasicGetResult? result;
-                while ((result = await channel.BasicGetAsync(queue.Name, false, cancellationToken)) != null)
+                var queues = await _rabbitMqManager.GetQueueStats(filter, cancellationToken);
+                foreach (var queue in queues)
                 {
-                    if (republish)
+                    channelLock ??= await _rabbitMQClient.CaptureSenderChannel();
+                    var channel = channelLock.Channel;
+
+                    BasicGetResult? result;
+                    while ((result = await channel.BasicGetAsync(queue.Name, false, cancellationToken)) != null)
                     {
-                        var originalRoutingKey = result.BasicProperties.Headers?
-                                .TryGetValue(NamingConvention.DeadletterRoutingKeyHeader, out var rawHeaderValue) == true
-                                && rawHeaderValue is byte[] rawKey
-                                    ? Encoding.UTF8.GetString(rawKey)
-                                    : "";
-
-                        var properties = new BasicProperties(result.BasicProperties)
+                        if (republish)
                         {
-                            Headers = new Dictionary<string, object?>(result.BasicProperties.Headers ?? new Dictionary<string, object?>()),
-                            Persistent = true,
-                            DeliveryMode = DeliveryModes.Persistent
-                        };
+                            var originalRoutingKey = result.BasicProperties.Headers?
+                                    .TryGetValue(NamingConvention.DeadletterRoutingKeyHeader, out var rawHeaderValue) == true
+                                    && rawHeaderValue is byte[] rawKey
+                                        ? Encoding.UTF8.GetString(rawKey)
+                                        : "";
 
-                        properties.Headers.Remove(NamingConvention.DeadletterRoutingKeyHeader);
-                        properties.Headers[NamingConvention.RediliveryCountHeader] = "0";
+                            var properties = new BasicProperties(result.BasicProperties)
+                            {
+                                Headers = new Dictionary<string, object?>(result.BasicProperties.Headers ?? new Dictionary<string, object?>()),
+                                Persistent = true,
+                                DeliveryMode = DeliveryModes.Persistent
+                            };
 
-                        await channel.BasicPublishAsync(queue.Name.Substring(0, queue.Name.Length - NamingConvention.DeadletterQueuePostfix.Length), originalRoutingKey, result.Body, cancellationToken);
+                            properties.Headers.Remove(NamingConvention.DeadletterRoutingKeyHeader);
+                            properties.Headers[NamingConvention.RediliveryCountHeader] = "0";
+
+                            await channel.BasicPublishAsync(queue.Name.Substring(0, queue.Name.Length - NamingConvention.DeadletterQueuePostfix.Length), originalRoutingKey, result.Body, cancellationToken);
+                        }
+                        await channel.BasicAckAsync(result.DeliveryTag, false, cancellationToken);
+                        count++;
                     }
-                    await channel.BasicAckAsync(result.DeliveryTag, false, cancellationToken);
-                    count++;
                 }
+            }
+            finally
+            {
+                await (channelLock?.DisposeAsync() ?? default);
             }
 
             return count;

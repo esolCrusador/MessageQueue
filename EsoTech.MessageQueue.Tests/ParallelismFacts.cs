@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Concurrent;
 using System.Linq;
+using System.Reactive.Subjects;
 using System.Threading.Tasks;
 using Xunit;
 
@@ -124,6 +125,24 @@ namespace EsoTech.MessageQueue.Tests
 
 
             await MessageQueueTestContext.Wait(() => receivedMessages.Contains("Message1") && receivedMessages.Contains("Message2"));
+        }
+
+        [Fact]
+        public async Task Should_Send_Messages_In_Parallel()
+        {
+            await _queue.SendEvents(
+                 Enumerable.Repeat(0, 100)
+                     .Select(_ => new FooMsg { Text = Guid.NewGuid().ToString("n") })
+            );
+
+            ConcurrentBag<string> receivedMessages = new();
+            _fooDelegateHandler.Handler = (m, _) =>
+            {
+                receivedMessages.Add(m.Text!);
+                return Task.CompletedTask;
+            };
+
+            await MessageQueueTestContext.Wait(() => receivedMessages.Count == 100, TimeSpan.FromSeconds(10));
         }
     }
 }

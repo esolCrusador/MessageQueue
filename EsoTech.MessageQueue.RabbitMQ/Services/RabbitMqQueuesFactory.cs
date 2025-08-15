@@ -25,7 +25,8 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             {
                 publisherTask = _topics.GetOrAdd(topic, t => new Lazy<Task>(async () =>
                 {
-                    await _rabbitMQClient.CreateTopic(await _rabbitMQClient.GetSenderChannel(), topic, cancellationToken);
+                    await using var channelLock = await _rabbitMQClient.CaptureSenderChannel();
+                    await _rabbitMQClient.CreateTopic(channelLock.Channel, topic, cancellationToken);
                 }));
                 await publisherTask.Value;
             }
@@ -44,7 +45,8 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             {
                 publisherTask = _queues.GetOrAdd(queueName, t => new Lazy<Task>(async () =>
                 {
-                    await _rabbitMQClient.CreateQueue(await _rabbitMQClient.GetSenderChannel(), queueName, cancellationToken);
+                    await using var channelLock = await _rabbitMQClient.CaptureSenderChannel();
+                    await _rabbitMQClient.CreateQueue(channelLock.Channel, queueName, cancellationToken);
                 }));
                 await publisherTask.Value;
             }
@@ -63,7 +65,8 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             {
                 publisherTask = _deadLetterQueues.GetOrAdd(queueName, t => new Lazy<Task<string>>(async () =>
                 {
-                    return await _rabbitMQClient.CreateDeadletterQueue(await _rabbitMQClient.GetSenderChannel(), queueName, cancellationToken);
+                    await using var channelLock = await _rabbitMQClient.CaptureSenderChannel();
+                    return await _rabbitMQClient.CreateDeadletterQueue(channelLock.Channel, queueName, cancellationToken);
                 }));
                 return await publisherTask.Value;
             }

@@ -100,18 +100,27 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             }).GroupBy(ms => new TopicSubscription(ms.Topic, ms.Subscription))
             .Select(g => new KeyValuePair<TopicSubscription, MessageHandler[]>(g.Key, g.Select(s => new MessageHandler(s.RoutingKey, s.MessageType, s.Handler)).ToArray()));
 
-            foreach (var (subscription, messageHandlers) in subscriptions)
-                await StartConsumerLoop(
-                    new SubscriptionFactory(subscription.Subscription, typeof(IEventMessageHandler<>), channel => _rabbitMQClient.CreateEventSubscription(
-                        channel,
-                        subscription.Topic,
-                        subscription.Subscription,
-                        messageHandlers.Select(mh => mh.RoutingKey),
-                        cancellationToken)
-                    ),
-                    messageHandlers,
-                    cancellationToken
-                );
+            await Parallel.ForEachAsync(subscriptions,
+                 new ParallelOptions
+                 {
+                     CancellationToken = cancellationToken,
+                     MaxDegreeOfParallelism = _options.InitializationParallelism,
+                 },
+                 async (kvp, cancellation) =>
+                 {
+                     var (subscription, messageHandlers) = kvp;
+                     await StartConsumerLoop(
+                         new SubscriptionFactory(subscription.Subscription, typeof(IEventMessageHandler<>), channel => _rabbitMQClient.CreateEventSubscription(
+                             channel,
+                             subscription.Topic,
+                             subscription.Subscription,
+                             messageHandlers.Select(mh => mh.RoutingKey),
+                             cancellation)
+                         ),
+                         messageHandlers,
+                         cancellation
+                     );
+                 });
         }
 
         private async Task CreateCommandHandlers(CancellationToken cancellationToken)
@@ -138,18 +147,27 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             }).GroupBy(ms => ms.Queue)
             .Select(g => new KeyValuePair<string, MessageHandler[]>(g.Key, g.Select(s => new MessageHandler(s.RoutingKey, s.MessageType, s.Handler)).ToArray()));
 
+            await Parallel.ForEachAsync(subscriptions,
+                new ParallelOptions
+                {
+                    CancellationToken = cancellationToken,
+                    MaxDegreeOfParallelism = _options.InitializationParallelism
+                },
+                async (kvp, cancellation) =>
+                {
+                    var (queueName, messageHandlers) = kvp;
 
-            foreach (var (queueName, messageHandlers) in subscriptions)
-                await StartConsumerLoop(
-                    new SubscriptionFactory(queueName, typeof(ICommandMessageHandler<>), channel => _rabbitMQClient.CreateCommandSubscription(
-                        channel,
-                        queueName,
-                        messageHandlers.Select(mh => mh.RoutingKey),
-                        cancellationToken)
-                    ),
-                    messageHandlers,
-                    cancellationToken
-                );
+                    await StartConsumerLoop(
+                        new SubscriptionFactory(queueName, typeof(ICommandMessageHandler<>), channel => _rabbitMQClient.CreateCommandSubscription(
+                            channel,
+                            queueName,
+                            messageHandlers.Select(mh => mh.RoutingKey),
+                            cancellation)
+                        ),
+                        messageHandlers,
+                        cancellation
+                    );
+                });
         }
 
         private record struct TopicSubscription(string Topic, string Subscription);
@@ -305,7 +323,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                         "",
                         true,
                         properties,
-                        body: args.Body,
+                        body: args.Body.ToArray(),
                         cancellationToken
                     );
                 }
@@ -323,7 +341,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                         args.RoutingKey,
                         true,
                         properties,
-                        body: args.Body
+                        body: args.Body.ToArray()
                     );
                 }
 
