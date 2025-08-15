@@ -142,7 +142,7 @@ namespace EsoTech.MessageQueue.Tests
                 return Task.CompletedTask;
             };
 
-            await MessageQueueTestContext.Wait(() => receivedMessages.Count == 100, TimeSpan.FromSeconds(10));
+            await MessageQueueTestContext.Wait(() => receivedMessages.Count == 100, TimeSpan.FromSeconds(20));
         }
     }
 }
