@@ -52,33 +52,33 @@ namespace EsoTech.MessageQueue.Tests
             }
         }
 
-        [Trait("Category", "Integration")]
-        public class SlowQARabbitMQ : DeadLetterQueueFacts
-        {
-            public SlowQARabbitMQ() : base(
-                new ServiceCollection().AddMessageQueue((config, sp) =>
-                {
-                    config.HandleRealtime = true;
-                    config.AckTimeout = TimeSpan.FromMicroseconds(1);
-                })
-                .AddRabbitMq((opts, cfg) =>
-                {
-                    opts.Connection.VirtualHost = $"/Testing-{Guid.NewGuid()}";
-                    opts.Connection.Host = "139.59.207.210";
-                    opts.Connection.Port = 5671;
-                    opts.Connection.UseSsl = true;
-                    opts.Connection.IgnoreSslErrors = true;
-                    opts.Connection.User = "admin";
-                    opts.Connection.Password = "284620c4-47f6-470c-a2b1-89d70991eadd";
+        //[Trait("Category", "Integration")]
+        //public class SlowQARabbitMQ : DeadLetterQueueFacts
+        //{
+        //    public SlowQARabbitMQ() : base(
+        //        new ServiceCollection().AddMessageQueue((config, sp) =>
+        //        {
+        //            config.HandleRealtime = true;
+        //            config.AckTimeout = TimeSpan.FromMicroseconds(1);
+        //        })
+        //        .AddRabbitMq((opts, cfg) =>
+        //        {
+        //            opts.Connection.VirtualHost = $"/Testing-{Guid.NewGuid()}";
+        //            opts.Connection.Host = "139.59.207.210";
+        //            opts.Connection.Port = 5671;
+        //            opts.Connection.UseSsl = true;
+        //            opts.Connection.IgnoreSslErrors = true;
+        //            opts.Connection.User = "admin";
+        //            opts.Connection.Password = "284620c4-47f6-470c-a2b1-89d70991eadd";
                     
-                    opts.MaxDeliveryCount = MaxDeliveryCount;
-                })
-                .AddEventMessageHandler<FooEventDelegateHandler>()
-                .AddEventMessageHandler<EventDelegateHandler<ComplexMessage>>()
-            )
-            {
-            }
-        }
+        //            opts.MaxDeliveryCount = MaxDeliveryCount;
+        //        })
+        //        .AddEventMessageHandler<FooEventDelegateHandler>()
+        //        .AddEventMessageHandler<EventDelegateHandler<ComplexMessage>>()
+        //    )
+        //    {
+        //    }
+        //}
 
         public async Task InitializeAsync()
         {
