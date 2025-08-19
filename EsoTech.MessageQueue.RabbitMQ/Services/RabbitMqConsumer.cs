@@ -279,10 +279,11 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
         {
             var started = DateTimeOffset.UtcNow;
             string? messageText = null;
+            Message? message = null;
 
             try
             {
-                var message = _messageSerializer.Deserialize(args.Body.Span);
+                message = _messageSerializer.Deserialize(args.Body.Span);
                 messageText = _messageSerializer.SerializeToString(message, typeof(Message));
                 _logger.LogInformation("Handling message {Message}", messageText);
 
@@ -323,7 +324,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                         "",
                         true,
                         properties,
-                        body: args.Body.ToArray(),
+                        body: message == null ? args.Body.ToArray() : _messageSerializer.Serialize(message),
                         cancellationToken
                     );
                 }
@@ -341,7 +342,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                         args.RoutingKey,
                         true,
                         properties,
-                        body: args.Body.ToArray()
+                        body: message == null ? args.Body.ToArray() : _messageSerializer.Serialize(message)
                     );
                 }
 
