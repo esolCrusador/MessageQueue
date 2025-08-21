@@ -15,6 +15,18 @@ namespace EsoTech.MessageQueue.Abstractions
             return self;
         }
 
+        public static IServiceCollection ConfigureMessageHandler<TEventHandler, TMessage>(this IServiceCollection services, Action<MessageHandlerConfiguration, IServiceProvider> configure)
+            where TEventHandler : IEventMessageHandler<TMessage>
+        {
+            return services.AddSingleton(sp =>
+            {
+                var options = new MessageHandlerConfiguration(typeof(TMessage), typeof(TEventHandler));
+                configure(options, sp);
+
+                return options;
+            });
+        }
+
         public static IServiceCollection TryAddEventMessageHandler<TEventHandler>(this IServiceCollection self)
             where TEventHandler : class, IEventMessageHandler
         {

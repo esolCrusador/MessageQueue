@@ -39,6 +39,8 @@ namespace EsoTech.MessageQueue.RabbitMQ
             return $"{GetServiceName(messageType)}commands";
         }
 
+        public string GetTopicSubscriptionName(string topicName, string subscriptionName) => $"{topicName}-{subscriptionName}";
+
         private const int MaxRoutingKeyLength = 255;
 
         public string GetRoutingKey(Type messageType)

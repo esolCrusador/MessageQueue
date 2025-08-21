@@ -16,7 +16,6 @@ using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
 using EsoTech.MessageQueue.Extensions;
 using EsoTech.MessageQueue.RabbitMQ.Serialization;
-using System.Threading.Channels;
 
 namespace EsoTech.MessageQueue.RabbitMQ.Services
 {
@@ -30,6 +29,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
         private readonly MessageQueueConfiguration _messagingOptions;
         private readonly IReadOnlyCollection<IEventMessageHandler> _eventHandlers;
         private readonly IReadOnlyCollection<ICommandMessageHandler> _commandHandlers;
+        private readonly Dictionary<string, MessageHandlerConfiguration> _messageHandlerConfigurations;
         private readonly CancellationTokenSource _stopToken;
         private readonly ILogger _logger;
 
@@ -47,13 +47,14 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             }
         }
 
-        public RabbitMqConsumer(RabbitMQClient rabbitMQClient, RabbitMqQueueFactory queueFactory, IEnumerable<IEventMessageHandler> eventHandlers, IEnumerable<ICommandMessageHandler> commandHandlers, NamingConvention namingConvention, MessageSerializer messageSerializer, IOptions<RabbitMQConfiguration> options, IOptions<MessageQueueConfiguration> messagingOptions, ILogger<RabbitMqConsumer> logger)
+        public RabbitMqConsumer(RabbitMQClient rabbitMQClient, RabbitMqQueueFactory queueFactory, IEnumerable<IEventMessageHandler> eventHandlers, IEnumerable<MessageHandlerConfiguration> messageHandlerConfigurations, IEnumerable<ICommandMessageHandler> commandHandlers, NamingConvention namingConvention, MessageSerializer messageSerializer, IOptions<RabbitMQConfiguration> options, IOptions<MessageQueueConfiguration> messagingOptions, ILogger<RabbitMqConsumer> logger)
         {
             _rabbitMQClient = rabbitMQClient;
             _queueFactory = queueFactory;
             _eventHandlers = eventHandlers.ToList();
             _commandHandlers = commandHandlers.ToList();
             _namingConvention = namingConvention;
+            _messageHandlerConfigurations = messageHandlerConfigurations.ToDictionary(h => _namingConvention.GetTopicSubscriptionName(_namingConvention.GetTopicName(h.MessageType), _namingConvention.GetSubscriptionName(h.HandlerType)));
             _messageSerializer = messageSerializer;
             _options = options.Value;
             _messagingOptions = messagingOptions.Value;
@@ -91,7 +92,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
 
                     return new EventMessageSubscription(
                                         topicName,
-                                        $"{topicName}-{subscriptionName}",
+                                        _namingConvention.GetTopicSubscriptionName(topicName, subscriptionName),
                                         _namingConvention.GetRoutingKey(messageType),
                                         messageType,
                                         kvp.Key
@@ -195,6 +196,8 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             {
                 try
                 {
+                    var handlerConfiguration = _messageHandlerConfigurations.GetValueOrDefault(subscriptionFactory.Name);
+                    var maxConcurrentMessages = handlerConfiguration?.MaxConcurrentMessages ?? _messagingOptions.MaxConcurrentMessages;
                     using var restartTokenSource = new CancellationTokenSource();
 #pragma warning disable CA2000 // Dispose objects before losing scope
                     using var cts = CancellationTokenSource.CreateLinkedTokenSource(_stopToken.Token, cancellationToken, failureTokenSource.Token, restartTokenSource.Token);
@@ -202,7 +205,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                     reconnects++;
 
                     channel = await _rabbitMQClient.CreateChannel();
-                    await channel.BasicQosAsync(0, (ushort)int.Min(ushort.MaxValue, _messagingOptions.MaxConcurrentMessages * 2), false);
+                    await channel.BasicQosAsync(0, (ushort)int.Min(ushort.MaxValue, maxConcurrentMessages * 2), false);
 
                     channel.ChannelShutdownAsync += (sender, @event) =>
                     {
@@ -229,7 +232,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
 
                         return Task.CompletedTask;
                     };
-                    using var parallelism = new SemaphoreSlim(_messagingOptions.MaxConcurrentMessages);
+                    using var parallelism = new SemaphoreSlim(maxConcurrentMessages);
                     consumer.ReceivedAsync += async (sender, args) =>
                     {
                         await parallelism.WaitAsync(cancellationToken);
