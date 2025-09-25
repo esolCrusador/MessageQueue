@@ -1,21 +1,22 @@
 ﻿using EsoTech.MessageQueue.Abstractions;
+using EsoTech.MessageQueue.Extensions;
+using EsoTech.MessageQueue.RabbitMQ.Exceptions;
+using EsoTech.MessageQueue.RabbitMQ.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using RabbitMQ.Client.Events;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
 using System;
 using System.Collections.Generic;
-using System.Linq.Expressions;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Threading;
+using System.Linq.Expressions;
 using System.Reactive;
-using System.Reactive.Subjects;
 using System.Reactive.Linq;
+using System.Reactive.Subjects;
 using System.Reactive.Threading.Tasks;
-using EsoTech.MessageQueue.Extensions;
-using EsoTech.MessageQueue.RabbitMQ.Serialization;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace EsoTech.MessageQueue.RabbitMQ.Services
 {
@@ -111,13 +112,20 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                  {
                      var (subscription, messageHandlers) = kvp;
                      await StartConsumerLoop(
-                         new SubscriptionFactory(subscription.Subscription, typeof(IEventMessageHandler<>), channel => _rabbitMQClient.CreateEventSubscription(
+                         new SubscriptionFactory(subscription.Subscription, typeof(IEventMessageHandler<>),
+                         channel => _rabbitMQClient.CreateEventSubscription(
                              channel,
                              subscription.Topic,
                              subscription.Subscription,
                              messageHandlers.Select(mh => mh.RoutingKey),
-                             cancellation)
-                         ),
+                             cancellation),
+                         (channel, routingKey) => _rabbitMQClient.RemoveEventSubscription(
+                            channel,
+                            subscription.Topic,
+                            subscription.Subscription,
+                            routingKey,
+                            cancellation
+                         )),
                          messageHandlers,
                          cancellation
                      );
@@ -159,10 +167,16 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                     var (queueName, messageHandlers) = kvp;
 
                     await StartConsumerLoop(
-                        new SubscriptionFactory(queueName, typeof(ICommandMessageHandler<>), channel => _rabbitMQClient.CreateCommandSubscription(
+                        new SubscriptionFactory(queueName, typeof(ICommandMessageHandler<>),
+                        channel => _rabbitMQClient.CreateCommandSubscription(
                             channel,
                             queueName,
                             messageHandlers.Select(mh => mh.RoutingKey),
+                            cancellation),
+                        (channel, routingKey) => _rabbitMQClient.RemoveCommandSubscription(
+                            channel,
+                            queueName,
+                            routingKey,
                             cancellation)
                         ),
                         messageHandlers,
@@ -175,7 +189,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
         private record struct MessageHandler(string RoutingKey, Type MessageType, object Handler);
         private record struct EventMessageSubscription(string Topic, string Subscription, string RoutingKey, Type MessageType, IEventMessageHandler Handler);
         private record struct CommandMessageSubscription(string Queue, string RoutingKey, Type MessageType, ICommandMessageHandler Handler);
-        private record struct SubscriptionFactory(string Name, Type HandlerGenericType, Func<IChannel, Task> Create);
+        private record struct SubscriptionFactory(string Name, Type HandlerGenericType, Func<IChannel, Task> Create, Func<IChannel, string, Task> RemoveRoutingKey);
 
         private Task StartConsumerLoop(SubscriptionFactory subscriptionFactory, IReadOnlyCollection<MessageHandler> handlers, CancellationToken cancellationToken)
         {
@@ -237,10 +251,19 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                     {
                         await parallelism.WaitAsync(cancellationToken);
                         var _ = HandleMessage(parallelism, channel, subscriptionFactory.Name, args, messageHandlers, cancellationToken)
-                            .ContinueWith(task =>
+                            .ContinueWith(async task =>
                             {
-                                if (task.IsFaulted)
-                                    _logger.LogCritical(task.Exception.Flatten().InnerException ?? task.Exception, $"{nameof(HandleMessage)} has failed");
+                                if (!task.IsFaulted)
+                                    return;
+
+                                if (task.Exception.InnerException is HandlerNotFoundException)
+                                {
+                                    await subscriptionFactory.RemoveRoutingKey(channel, args.RoutingKey);
+                                    await channel.BasicAckAsync(args.DeliveryTag, false);
+                                    return;
+                                }
+
+                                _logger.LogCritical(task.Exception.Flatten().InnerException ?? task.Exception, $"{nameof(HandleMessage)} has failed");
                             });
                     };
 
@@ -292,13 +315,18 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
 
                 await WaitBeforeHandle;
 
-                foreach (var handler in messageHandlers[message.Payload!.GetType()])
+                foreach (var handler in messageHandlers.GetValueOrDefault(message.Payload!.GetType()) ?? throw new HandlerNotFoundException(message.Payload.GetType().AssemblyQualifiedName!, messageText))
                     await handler(message.Payload, args.CancellationToken);
 
                 await channel.BasicAckAsync(args.DeliveryTag, false);
 
                 _handled?.OnNext(Unit.Default);
                 parallelism.Release();
+            }
+            catch (HandlerNotFoundException)
+            {
+                parallelism.Release();
+                throw;
             }
             catch (Exception ex)
             {

@@ -97,6 +97,11 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             await Task.WhenAll(rotingKeys.Select(rk => BindRotingKey(channel, subscriptionName, rk, cancellationToken)));
         }
 
+        public async Task RemoveEventSubscription(IChannel channel, string topicName, string subscriptionName, string rotingKey, CancellationToken cancellationToken)
+        {
+            await channel.ExchangeUnbindAsync(subscriptionName, topicName, rotingKey, cancellationToken: cancellationToken);
+        }
+
         public Task CreateQueue(IChannel channel, string queueName, CancellationToken cancellationToken) =>
             channel.ExchangeDeclareAsync(queueName, "direct", true, false, cancellationToken: cancellationToken);
 
@@ -106,6 +111,11 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
 
             await channel.QueueDeclareAsync(queueName, durable: true, exclusive: false, autoDelete: false, cancellationToken: cancellationToken);
             await Task.WhenAll(rotingKeys.Select(rk => BindRotingKey(channel, queueName, rk, cancellationToken)));
+        }
+
+        public Task RemoveCommandSubscription(IChannel channel, string subscriptionName, string routingKey, CancellationToken cancellationToken)
+        {
+            return channel.QueueUnbindAsync(subscriptionName, subscriptionName, routingKey, cancellationToken: cancellationToken);
         }
 
         public async Task<string> CreateDeadletterQueue(IChannel channel, string queueName, CancellationToken cancellationToken)
