@@ -14,11 +14,11 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
         private bool _disposed;
         private int _createdChannels;
 
-        public ChannelsPool(int senderPool)
+        public ChannelsPool(int sendersPoolSize)
         {
             _channels = [];
-            _channelsLock = new(senderPool);
-            _senderPool = senderPool;
+            _channelsLock = new(sendersPoolSize);
+            _senderPool = sendersPoolSize;
         }
 
         public async ValueTask DisposeAsync()
@@ -36,9 +36,9 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                 return channel;
 
 
+            await _channelsLock.WaitAsync(cancellationToken);
             while (true)
             {
-                await _channelsLock.WaitAsync(cancellationToken);
                 if (_channels.TryTake(out channel))
                     return channel;
 

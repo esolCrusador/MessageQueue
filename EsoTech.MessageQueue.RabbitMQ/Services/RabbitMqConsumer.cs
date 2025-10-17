@@ -33,7 +33,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
         private readonly Dictionary<string, MessageHandlerConfiguration> _messageHandlerConfigurations;
         private readonly CancellationTokenSource _stopToken;
         private readonly ILogger _logger;
-
+        private readonly SemaphoreSlim _parallelism;
         private Subject<Unit>? _handled;
         private Subject<Unit>? _handleNext;
         private IObservable<Unit>? _waitBeforeHandle;
@@ -61,6 +61,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             _messagingOptions = messagingOptions.Value;
             _stopToken = new CancellationTokenSource();
             _logger = logger;
+            _parallelism = new SemaphoreSlim(_messagingOptions.MaxConcurrentMessages);
 
             if (!_messagingOptions.HandleRealtime)
             {
@@ -208,18 +209,24 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             using var failureTokenSource = new CancellationTokenSource();
             while (!_stopToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested && !failureTokenSource.IsCancellationRequested)
             {
+                SemaphoreSlim? parallelism = default;
                 try
                 {
                     var handlerConfiguration = _messageHandlerConfigurations.GetValueOrDefault(subscriptionFactory.Name);
-                    var maxConcurrentMessages = handlerConfiguration?.MaxConcurrentMessages ?? _messagingOptions.MaxConcurrentMessages;
                     using var restartTokenSource = new CancellationTokenSource();
 #pragma warning disable CA2000 // Dispose objects before losing scope
                     using var cts = CancellationTokenSource.CreateLinkedTokenSource(_stopToken.Token, cancellationToken, failureTokenSource.Token, restartTokenSource.Token);
+                    parallelism = CreateHandlerParallelism(handlerConfiguration);
 #pragma warning restore CA2000 // Dispose objects before losing scope
+
                     reconnects++;
 
                     channel = await _rabbitMQClient.CreateChannel();
-                    await channel.BasicQosAsync(0, (ushort)int.Min(ushort.MaxValue, maxConcurrentMessages * 2), false);
+                    ushort prefetchCount = (ushort)int.Min(ushort.MaxValue,
+                        handlerConfiguration?.PrefechCount ?? handlerConfiguration?.MaxConcurrentMessages
+                        ?? _messagingOptions.PrefechCount ?? _messagingOptions.MaxConcurrentMessages
+                    );
+                    await channel.BasicQosAsync(0, prefetchCount, false);
 
                     channel.ChannelShutdownAsync += (sender, @event) =>
                     {
@@ -246,11 +253,11 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
 
                         return Task.CompletedTask;
                     };
-                    using var parallelism = new SemaphoreSlim(maxConcurrentMessages);
+
                     consumer.ReceivedAsync += async (sender, args) =>
                     {
-                        await parallelism.WaitAsync(cancellationToken);
-                        var _ = HandleMessage(parallelism, channel, subscriptionFactory.Name, args, messageHandlers, cancellationToken)
+                        await (parallelism ?? _parallelism).WaitAsync(cancellationToken);
+                        var _ = HandleMessage(parallelism ?? _parallelism, channel, subscriptionFactory.Name, args, messageHandlers, cancellationToken)
                             .ContinueWith(async task =>
                             {
                                 if (!task.IsFaulted)
@@ -297,10 +304,20 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                 finally
                 {
                     await (channel?.DisposeAsync() ?? default);
+                    parallelism?.Dispose();
                 }
             }
         }
 
+        private SemaphoreSlim? CreateHandlerParallelism(MessageHandlerConfiguration? handlerConfiguration)
+        {
+            var maxConcurrentMessages = handlerConfiguration?.MaxConcurrentMessages;
+
+            if (maxConcurrentMessages == null)
+                return null;
+
+            return new SemaphoreSlim(maxConcurrentMessages.Value);
+        }
         private async Task HandleMessage(SemaphoreSlim parallelism, IChannel channel, string subscriptionName, BasicDeliverEventArgs args, Dictionary<Type, List<Func<object, CancellationToken, Task>>> messageHandlers, CancellationToken cancellationToken)
         {
             var started = DateTimeOffset.UtcNow;
@@ -441,6 +458,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             _handled?.Dispose();
             _handleNext?.OnCompleted();
             _handleNext?.Dispose();
+            _parallelism.Dispose();
         }
     }
 }

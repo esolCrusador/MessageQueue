@@ -8,6 +8,7 @@ namespace EsoTech.MessageQueue.Abstractions
         public TimeSpan AckTimeout { get; set; } = TimeSpan.FromSeconds(30);
         public TimeSpan ResumeLockPeriod { get => _resumeLockPeriod ?? AckTimeout / 2; set => _resumeLockPeriod = value; }
         public bool HandleRealtime { get; set; } = true;
+        public int? PrefechCount { get; set; } = 20; // Per Queue
         public int MaxConcurrentMessages { get; set; } = 100;
     }
 }

@@ -7,7 +7,7 @@ namespace EsoTech.MessageQueue.Abstractions
         public Type MessageType { get; }
         public Type HandlerType { get; }
         public int? MaxConcurrentMessages { get; set; }
-
+        public int? PrefechCount { get; set; }
         public MessageHandlerConfiguration(Type messageType, Type handlerType)
         {
             MessageType = messageType;
