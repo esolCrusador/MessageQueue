@@ -209,6 +209,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             using var failureTokenSource = new CancellationTokenSource();
             while (!_stopToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested && !failureTokenSource.IsCancellationRequested)
             {
+                string? startedConsumer = null;
                 SemaphoreSlim? parallelism = default;
                 try
                 {
@@ -275,7 +276,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                     };
 
 
-                    var startedConsumer = await channel.BasicConsumeAsync(subscriptionFactory.Name, false, consumer);
+                    startedConsumer = await channel.BasicConsumeAsync(subscriptionFactory.Name, false, consumer);
 
                     _logger.LogInformation("Started consuming: {ConsumerName} {Callback}", subscriptionFactory.Name, startedConsumer);
                     subscribed.TrySetResult();
@@ -303,7 +304,12 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                 }
                 finally
                 {
-                    await (channel?.DisposeAsync() ?? default);
+                    if (channel != null)
+                    {
+                        if (startedConsumer != null)
+                            await channel.BasicCancelAsync(startedConsumer);
+                        await channel.DisposeAsync();
+                    }
                     parallelism?.Dispose();
                 }
             }

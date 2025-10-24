@@ -32,14 +32,10 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
 
         public async Task<ChannelLock> CaptureChannel(Func<Task<IChannel>> createChannel, CancellationToken cancellationToken)
         {
-            if (_channels.TryTake(out var channel))
-                return channel;
-
-
             await _channelsLock.WaitAsync(cancellationToken);
             while (true)
             {
-                if (_channels.TryTake(out channel))
+                if (_channels.TryTake(out var channel))
                     return channel;
 
                 if (_createdChannels < _senderPool)

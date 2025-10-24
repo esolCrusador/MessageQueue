@@ -13,38 +13,41 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
 {
     public class RabbitMQClient : IAsyncDisposable
     {
-        private readonly RabbitMQConnectionConfiguration _connection;
+        private readonly RabbitMQConnectionConfiguration _connectionConfiguration;
         private readonly string _virtualHost;
         private readonly ConnectionFactory _factory;
         private readonly RabbitMqManagement _rabbitMqManager;
         private readonly ChannelsPool _channelsPool;
         private readonly ILogger<RabbitMQClient> _logger;
+
+        private IConnection? _connection;
+        private readonly object _connectionLock = new object();
         private Task<IConnection> _connectionTask;
 
         public RabbitMQClient(RabbitMqManagement rabbitMqManager, IOptions<RabbitMQConfiguration> options, ILogger<RabbitMQClient> logger)
         {
-            _connection = options.Value.Connection;
-            _virtualHost = _connection.VirtualHost;
+            _connectionConfiguration = options.Value.Connection;
+            _virtualHost = _connectionConfiguration.VirtualHost;
             _rabbitMqManager = rabbitMqManager;
             _channelsPool = new ChannelsPool(options.Value.SendersPool);
             _logger = logger;
 
             _factory = new ConnectionFactory
             {
-                HostName = _connection.Host ?? throw new ArgumentException($"{nameof(options.Value.Connection)}.{nameof(_connection.Host)} is not configured"),
-                Port = _connection.Port,
-                UserName = _connection.User ?? throw new ArgumentException($"{nameof(options.Value.Connection)}.{nameof(_connection.User)} is not configured"),
-                Password = _connection.Password ?? throw new ArgumentException($"{nameof(options.Value.Connection)}.{nameof(_connection.Password)} is not configured"),
-                VirtualHost = _connection.VirtualHost,
+                HostName = _connectionConfiguration.Host ?? throw new ArgumentException($"{nameof(options.Value.Connection)}.{nameof(_connectionConfiguration.Host)} is not configured"),
+                Port = _connectionConfiguration.Port,
+                UserName = _connectionConfiguration.User ?? throw new ArgumentException($"{nameof(options.Value.Connection)}.{nameof(_connectionConfiguration.User)} is not configured"),
+                Password = _connectionConfiguration.Password ?? throw new ArgumentException($"{nameof(options.Value.Connection)}.{nameof(_connectionConfiguration.Password)} is not configured"),
+                VirtualHost = _connectionConfiguration.VirtualHost,
             };
-            if (_connection.UseSsl)
+            if (_connectionConfiguration.UseSsl)
             {
                 _factory.Ssl = new SslOption
                 {
-                    ServerName = _connection.Host,
+                    ServerName = _connectionConfiguration.Host,
                     Enabled = true,
                 };
-                if (_connection.IgnoreSslErrors)
+                if (_connectionConfiguration.IgnoreSslErrors)
                 {
                     _factory.Ssl.AcceptablePolicyErrors = SslPolicyErrors.RemoteCertificateChainErrors | SslPolicyErrors.RemoteCertificateNameMismatch;
                     _factory.Ssl.CertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) =>
@@ -60,11 +63,33 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             _connectionTask = _factory.CreateConnectionAsync();
         }
 
+        private async Task<IConnection> GetConnection()
+        {
+            var connection = _connection;
+            if (connection?.IsOpen == true)
+                return connection;
+
+            var connectionTask = _connectionTask;
+            connection = await connectionTask;
+
+            if (!connection.IsOpen)
+            {
+                if (connectionTask == _connectionTask)
+                    lock (_connectionLock)
+                        if (connectionTask == _connectionTask)
+                            _connectionTask = _factory.CreateConnectionAsync();
+
+                connection = await _connectionTask;
+            }
+
+            return _connection = connection;
+        }
+
         public async Task<IChannel> CreateChannel()
         {
             try
             {
-                return await (await _connectionTask).CreateChannelAsync();
+                return await (await GetConnection()).CreateChannelAsync();
             }
             catch (OperationInterruptedException ex) when (ex.Message.Contains($"NOT_ALLOWED - vhost {_virtualHost} not found"))
             {
@@ -74,12 +99,20 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
         }
 
         public Task<ChannelsPool.ChannelLock> CaptureSenderChannel() => _channelsPool.CaptureChannel(CreateChannel, default);
-        private static async Task<IChannel> CreateChannel(Task<IConnection> connection) => await (await connection).CreateChannelAsync();
 
         public async ValueTask DisposeAsync()
         {
             await _channelsPool.DisposeAsync();
-            await (await _connectionTask).DisposeAsync();
+            IConnection? connection = null;
+            try
+            {
+                connection = await GetConnection();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during getting connection from disposal");
+            }
+            await (connection?.DisposeAsync() ?? default);
         }
 
         public Task CreateTopic(IChannel channel, string topicName, CancellationToken cancellationToken) =>
