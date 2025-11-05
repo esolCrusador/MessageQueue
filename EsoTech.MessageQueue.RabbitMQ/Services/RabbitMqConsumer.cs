@@ -334,7 +334,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             {
                 message = _messageSerializer.Deserialize(args.Body.Span);
                 messageText = _messageSerializer.SerializeToString(message, typeof(Message));
-                _logger.LogInformation("Handling message {Message}", messageText);
+                _logger.LogInformation("Subscription: {Queue}. Handling message {Message}", subscriptionName, messageText);
 
                 await WaitBeforeHandle;
 
