@@ -354,7 +354,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             catch (Exception ex)
             {
                 parallelism.Release();
-                _logger.LogError(ex, "Consumer failed {Subscrription}", subscriptionName);
+                _logger.LogError(ex, "Consumer failed {Subscrription} for message {Message}", subscriptionName, messageText);
 
                 int rediliveryCount = 0;
                 if (args.BasicProperties.Headers?.TryGetValue(NamingConvention.RediliveryCountHeader, out var redeliveryCountObj) == true)

@@ -36,7 +36,16 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             while (true)
             {
                 if (_channels.TryTake(out var channel))
-                    return channel;
+                {
+                    if (!channel.Channel.IsOpen)
+                    {
+                        await channel.DisposeAsync();
+                    }
+                    else
+                    {
+                        return channel;
+                    }
+                }
 
                 if (_createdChannels < _senderPool)
                 {
@@ -59,7 +68,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             if (channelLock.Channel.IsClosed)
             {
                 Interlocked.Decrement(ref _createdChannels);
-                await channelLock.DisposeAsync();
+                await channelLock.Channel.DisposeAsync();
             }
             else
             {
