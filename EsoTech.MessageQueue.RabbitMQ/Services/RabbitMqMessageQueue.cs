@@ -167,7 +167,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                             properties.Headers.Remove(NamingConvention.DeadletterRoutingKeyHeader);
                             properties.Headers[NamingConvention.RediliveryCountHeader] = "0";
 
-                            await channel.BasicPublishAsync(queue.Name.Substring(0, queue.Name.Length - NamingConvention.DeadletterQueuePostfix.Length), originalRoutingKey, result.Body, cancellationToken);
+                            await channel.BasicPublishAsync(queue.Name.Substring(0, queue.Name.Length - NamingConvention.DeadletterQueuePostfix.Length), originalRoutingKey, true, properties, result.Body, cancellationToken);
                         }
                         await channel.BasicAckAsync(result.DeliveryTag, false, cancellationToken);
                         count++;
