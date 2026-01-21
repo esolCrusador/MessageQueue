@@ -304,7 +304,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                 }
                 finally
                 {
-                    if (channel != null)
+                    if (channel != null && channel.IsOpen)
                     {
                         if (startedConsumer != null)
                             await channel.BasicCancelAsync(startedConsumer);
