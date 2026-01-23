@@ -304,10 +304,18 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                 }
                 finally
                 {
-                    if (channel != null && channel.IsOpen)
+                    if (channel != null)
                     {
-                        if (startedConsumer != null)
-                            await channel.BasicCancelAsync(startedConsumer);
+                        if (startedConsumer != null && channel.IsOpen)
+                            try
+                            {
+                                await channel.BasicCancelAsync(startedConsumer);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, $"Error during closing of the channel {channel.ToString()}");
+                            }
+
                         await channel.DisposeAsync();
                     }
                     parallelism?.Dispose();

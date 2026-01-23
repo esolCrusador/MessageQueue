@@ -70,9 +70,17 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                 return connection;
 
             var connectionTask = _connectionTask;
-            connection = await connectionTask;
+            try
+            {
+                connection = await connectionTask;
+            }
+            catch (BrokerUnreachableException ex)
+            {
+                _logger.LogError(ex, "Brocker unreachable, reacrating...");
+                connection = null;
+            }
 
-            if (!connection.IsOpen)
+            if (connection == null || !connection.IsOpen)
             {
                 if (connectionTask == _connectionTask)
                     lock (_connectionLock)
