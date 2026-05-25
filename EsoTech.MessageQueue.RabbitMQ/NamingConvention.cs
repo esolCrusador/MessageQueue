@@ -1,8 +1,10 @@
-﻿using EsoTech.MessageQueue.AzureServiceBus;
+﻿using EsoTech.MessageQueue.Abstractions.Attributes;
+using EsoTech.MessageQueue.AzureServiceBus;
 using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text.RegularExpressions;
 
 namespace EsoTech.MessageQueue.RabbitMQ
@@ -13,7 +15,7 @@ namespace EsoTech.MessageQueue.RabbitMQ
         private readonly Regex _toReplace = new Regex("(`\\d+)|,", RegexOptions.Compiled);
         private readonly HashFunction _hashFunction;
         private readonly Dictionary<string, string> _serviceNamesRemap;
-        
+
         public const string DeadletterQueuePostfix = "-deadletter";
         public const string DeadletterRoutingKeyHeader = "x-deadletter-routing-key";
         public const string RediliveryCountHeader = "x-redelivery-count";
@@ -26,7 +28,21 @@ namespace EsoTech.MessageQueue.RabbitMQ
 
         public string GetSubscriptionName(Type handlerType)
         {
-            return GetServiceName(handlerType);
+            var subscriptionAttribute = handlerType.GetCustomAttribute<SubscriptionAttribute>();
+            if (subscriptionAttribute?.Name != null)
+                return subscriptionAttribute.Name;
+
+            var subscriptionName = GetServiceName(handlerType);
+            if (subscriptionAttribute != null)
+            {
+                if (subscriptionAttribute.Prefix != null)
+                    subscriptionName = $"{subscriptionAttribute.Prefix}.{subscriptionName}";
+
+                if (subscriptionAttribute.Postfix != null)
+                    subscriptionName = $"{subscriptionName}.{subscriptionAttribute.Postfix}";
+            }
+
+            return subscriptionName;
         }
 
         public string GetTopicName(Type messageType)
@@ -59,7 +75,7 @@ namespace EsoTech.MessageQueue.RabbitMQ
             assemblyFullName = assemblyFullName!.Substring(0, assemblyFullName.IndexOf(", "));
             var parts = assemblyFullName.Split('.');
 
-            var serviceName = parts.Length > 1 ? parts.Skip(1).First().ToLower() : parts[0];
+            var serviceName = parts.Length > 1 ? parts.Skip(1).First().ToLowerInvariant() : parts[0];
 
             return _serviceNamesRemap.GetValueOrDefault(serviceName) ?? serviceName;
         }
