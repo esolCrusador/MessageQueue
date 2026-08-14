@@ -14,14 +14,17 @@ namespace EsoTech.MessageQueue.RabbitMQ.Serialization
 
         private readonly JsonSerializerOptions _jsonOptions;
 
-        public MessageSerializer(ILogger<MessageSerializer> logger) : this(logger, new JsonSerializerOptions { Converters = { new MessageConverter() } })
+        public MessageSerializer(ILogger<MessageSerializer> logger) : this(logger, new JsonSerializerOptions())
         {
         }
 
         public MessageSerializer(ILogger<MessageSerializer> logger, JsonSerializerOptions jsonSerializerOptions)
         {
             _logger = logger;
-            _jsonOptions = jsonSerializerOptions;
+            _jsonOptions = new JsonSerializerOptions(jsonSerializerOptions)
+            {
+                Converters = { new MessageConverter() }
+            };
         }
 
         public byte[] Serialize(Message msg)

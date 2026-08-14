@@ -3,7 +3,6 @@ using EsoTech.MessageQueue.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using System;
-using System.Text.Json;
 
 namespace EsoTech.MessageQueue
 {
@@ -23,12 +22,6 @@ namespace EsoTech.MessageQueue
             self.AddHostedService<MessageQueueStarter>();
 
             return self;
-        }
-
-        public static JsonSerializerOptions SetupMessageQueueJsonOptions(this JsonSerializerOptions options)
-        {
-            options.Converters.Add(new MessageConverter());
-            return options;
         }
     }
 }
