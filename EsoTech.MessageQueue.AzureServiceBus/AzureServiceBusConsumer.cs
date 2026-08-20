@@ -5,10 +5,8 @@ using EsoTech.MessageQueue.Extensions;
 using EsoTech.MessageQueue.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using OpenTracing;
 using OpenTracing.Propagation;
 using OpenTracing.Tag;
-using Prometheus;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -28,14 +26,6 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         private static readonly NoopDisposable DefaultDisposable = new NoopDisposable();
 
         private Subject<Unit> _handled = new Subject<Unit>();
-        private static readonly Counter ExecutedMessages =
-            Metrics.CreateCounter("service_bus_executed_messages_amount", "Currently executed amount of messages", "event_name", "queue_name");
-
-        private static readonly Counter FailedMessages =
-            Metrics.CreateCounter("service_bus_failed_messages_amount", "Current failed amount of messages", "event_name", "queue_name");
-
-        private static readonly Histogram MessagesDurations =
-            Metrics.CreateHistogram("service_bus_messages_durations_seconds", "Durations of performed messages", "event_name", "queue_name");
 
         private Task WaitBeforeHandle
         {
@@ -53,7 +43,6 @@ namespace EsoTech.MessageQueue.AzureServiceBus
 
         private readonly IEnumerable<IEventMessageHandler> _eventHandlers;
         private readonly IEnumerable<ICommandMessageHandler> _commandHandlers;
-        private readonly TracerFactory? _tracerFactory;
         private readonly MessageQueueConfiguration _messageQueueConfiguration;
         private readonly ServiceBusClient _serviceBusClient;
         private readonly AzureServiceBusNamingConvention _namingConvention;
@@ -64,12 +53,9 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         private IList<ServiceBusProcessor>? _processors;
         private bool _initialized = false;
 
-        private ITracer? Tracer => _tracerFactory?.Tracer;
-
         public AzureServiceBusConsumer(
             IEnumerable<IEventMessageHandler> eventHandlers,
             IEnumerable<ICommandMessageHandler> commandHandlers,
-            TracerFactory? tracerFactory,
             IOptions<MessageQueueConfiguration> messageQueueConfiguration,
             AzureServiceBusNamingConvention namingConvention,
             AzureServiceBusClientHolder serviceBusClientHolder,

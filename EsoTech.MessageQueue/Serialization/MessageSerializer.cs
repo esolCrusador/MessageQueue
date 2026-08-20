@@ -1,5 +1,4 @@
 ﻿using Microsoft.Extensions.Logging;
-using Prometheus;
 using System;
 using System.Text.Json;
 
@@ -8,10 +7,6 @@ namespace EsoTech.MessageQueue.Serialization
     public class MessageSerializer
     {
         private readonly ILogger<MessageSerializer> _logger;
-
-        private static readonly Histogram DeliveryTime =
-            Metrics.CreateHistogram("message_queue_delivery_time_milliseconds", "Time in flight for message queue messages.");
-
         private readonly JsonSerializerOptions _jsonOptions;
 
         public MessageSerializer(ILogger<MessageSerializer> logger) : this(logger, new JsonSerializerOptions { Converters = { new MessageConverter() } })
@@ -43,7 +38,7 @@ namespace EsoTech.MessageQueue.Serialization
                 var timeToDeliver = DateTime.UtcNow.Ticks - deserialized.TimestampInTicks;
                 var timeSpan = TimeSpan.FromTicks(Math.Max(timeToDeliver, 0));
 
-                DeliveryTime.Observe(timeSpan.TotalMilliseconds);
+                Metrics.DeliveryTime.Record((decimal)timeSpan.TotalMilliseconds);
             }
 
             return deserialized ?? throw new ArgumentException("Could not deserialize", nameof(bytes));

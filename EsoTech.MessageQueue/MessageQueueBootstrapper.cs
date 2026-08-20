@@ -12,7 +12,6 @@ namespace EsoTech.MessageQueue
             AddMessageQueue(self, (options, _) => configure(options));
         public static IServiceCollection AddMessageQueue(this IServiceCollection self, Action<MessageQueueConfiguration, IServiceProvider>? configure = null)
         {
-            self.TryAddSingleton<TracerFactory>();
             self.TryAddSingleton<MessageSerializer>();
 
             var opts = self.AddOptions<MessageQueueConfiguration>();
