@@ -12,10 +12,10 @@ namespace EsoTech.MessageQueue
         private static readonly ActivitySource ActivitySource = new ActivitySource("EsoTech.MessageQueue");
         public static string ActivitySourceName => ActivitySource.Name;
 
-        public static Activity? StartSenderActivity(string messageInfo, string destanation)
+        public static Activity? StartSenderActivity(string messageInfo, string destination)
         {
             var activity = ActivitySource.StartActivity(messageInfo, ActivityKind.Producer);
-            activity?.AddTag("mq.queue", destanation);
+            activity?.AddTag("mq.queue", destination);
 
             return activity;
         }
