@@ -8,23 +8,26 @@ namespace EsoTech.MessageQueue
 {
     public static class MessageQueueTracing
     {
+        public const string SystemRabbitMq = "rabbitmq";
+        public const string SystemAzureServiceBus = "servicebus";
+
         private static readonly DistributedContextPropagator Propagator = DistributedContextPropagator.Current;
         private static readonly ActivitySource ActivitySource = new ActivitySource("EsoTech.MessageQueue");
         public static string ActivitySourceName => ActivitySource.Name;
 
-        public static Activity? StartSenderActivity(string messageInfo, string destination)
+        public static Activity? StartSenderActivity(string messageTypeName, string destination, string messagingSystem)
         {
-            var activity = ActivitySource.StartActivity(messageInfo, ActivityKind.Producer);
-            activity?.AddTag("mq.queue", destination);
-
+            var activity = ActivitySource.StartActivity($"Sending {messageTypeName}", ActivityKind.Producer);
+            SetMessagingTags(activity, messagingSystem, destination, "publish");
+            activity?.SetTag("mq.message_name", messageTypeName);
             return activity;
         }
 
         public static void EnrichSenderActivity(Type type, string serializedMessage)
         {
             var activity = Activity.Current;
-            activity?.AddTag("mq.message_name", type.Name);
-            activity?.AddTag("mq.message", serializedMessage);
+            activity?.SetTag("mq.message_name", type.Name);
+            activity?.SetTag("mq.message", serializedMessage);
         }
 
         public static void EnrichSenderHeaders<TValue>(Dictionary<string, TValue> headers)
@@ -39,13 +42,30 @@ namespace EsoTech.MessageQueue
             Propagator.Inject(activity ?? Activity.Current, headers, setterCallback);
         }
 
-        public static Activity? StartConsumerActivity<TValue>(string messageInfo, IDictionary<string, TValue>? headers, string queueName, string messageText)
+        public static Activity? StartConsumerActivity<TValue>(
+            string messageTypeName,
+            IDictionary<string, TValue>? headers,
+            string destination,
+            string messageText,
+            string messagingSystem)
         {
-            var activity = ActivitySource.StartActivity(messageInfo, ActivityKind.Consumer, ExtractContext(headers));
-            activity?.AddTag("mq.queue", queueName);
-            activity?.AddTag("mq.message", messageText);
-
+            var activity = ActivitySource.StartActivity($"Handling {messageTypeName}", ActivityKind.Consumer, ExtractContext(headers));
+            SetMessagingTags(activity, messagingSystem, destination, "process");
+            activity?.SetTag("mq.message_name", messageTypeName);
+            activity?.SetTag("mq.message", messageText);
             return activity;
+        }
+
+        private static void SetMessagingTags(Activity? activity, string messagingSystem, string destination, string operation)
+        {
+            if (activity is null)
+                return;
+
+            activity.SetTag("messaging.system", messagingSystem);
+            activity.SetTag("messaging.destination.name", destination);
+            // Both keys: NR OTel APM rules still match messaging.operation; semconv 1.24+ uses messaging.operation.name.
+            activity.SetTag("messaging.operation", operation);
+            activity.SetTag("messaging.operation.name", operation);
         }
 
         private static void AddStringHeaders(object? carrier, string fieldName, string fieldValue)

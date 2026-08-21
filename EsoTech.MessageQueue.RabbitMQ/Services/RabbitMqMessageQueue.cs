@@ -85,7 +85,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
         private async Task PublishMessage(string destanation, object message, CancellationToken cancellationToken)
         {
             var messageType = message.GetType();
-            using var activity = MessageQueueTracing.StartSenderActivity($"Sending {messageType.Name}", destanation);
+            using var activity = MessageQueueTracing.StartSenderActivity(messageType.Name, destanation, MessageQueueTracing.SystemRabbitMq);
             var routingKey = _routingKeys.GetOrAdd(messageType, _namingConvention.GetRoutingKey);
 
             MessageQueueTracing.EnrichSenderActivity(messageType, _messageSerializer.SerializeToString(message, messageType));

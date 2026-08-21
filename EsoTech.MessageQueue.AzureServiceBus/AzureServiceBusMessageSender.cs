@@ -97,7 +97,7 @@ namespace EsoTech.MessageQueue.AzureServicebus
 
         private async Task Send(ServiceBusSender sender, object msg, TimeSpan? delay = default)
         {
-            using var activity = MessageQueueTracing.StartSenderActivity($"Sending {msg.GetType().Name}", sender.EntityPath);
+            using var activity = MessageQueueTracing.StartSenderActivity(msg.GetType().Name, sender.EntityPath, MessageQueueTracing.SystemAzureServiceBus);
             try
             {
                 await sender.SendMessageAsync(CreateMessage(msg, delay));
@@ -112,7 +112,10 @@ namespace EsoTech.MessageQueue.AzureServicebus
 
         public async Task SendMultiple(ServiceBusSender sender, IEnumerable<object> eventMessages)
         {
-            using var activity = MessageQueueTracing.StartSenderActivity($"Sending {string.Join(", ", eventMessages.GroupBy(m => m.GetType()).Select(g => $"{g.Key.Name}: {g.Count()} messages"))}", sender.EntityPath);
+            using var activity = MessageQueueTracing.StartSenderActivity(
+                string.Join(", ", eventMessages.GroupBy(m => m.GetType()).Select(g => $"{g.Key.Name}: {g.Count()} messages")),
+                sender.EntityPath,
+                MessageQueueTracing.SystemAzureServiceBus);
             try
             {
                 await sender.SendMessagesAsync(eventMessages.Select(m => CreateMessage(m)));

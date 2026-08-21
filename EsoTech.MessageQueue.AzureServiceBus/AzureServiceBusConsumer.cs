@@ -358,10 +358,11 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                 : DefaultDisposable;
 
             using var activity = MessageQueueTracing.StartConsumerActivity(
-                $"Handling {message.Payload.GetType().Name}",
+                message.Payload.GetType().Name,
                 message.Headers,
                 args.EntityPath,
-                serializedMessage
+                serializedMessage,
+                MessageQueueTracing.SystemAzureServiceBus
             );
 
             try

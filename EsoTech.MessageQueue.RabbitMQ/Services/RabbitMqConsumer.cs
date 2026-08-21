@@ -343,11 +343,17 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             try
             {
                 message = _messageSerializer.Deserialize(args.Body.Span);
-                messageText = _messageSerializer.SerializeToString(message, typeof(Message));
+                messageText = message.Payload == null ? "null" : _messageSerializer.SerializeToString(message.Payload, message.Payload.GetType());
 
                 await WaitBeforeHandle;
 
-                activity = MessageQueueTracing.StartConsumerActivity($"Handling message {message.GetType().Name}", args.BasicProperties.Headers, subscriptionName, messageText);
+                var payloadTypeName = message.Payload?.GetType().Name ?? "Unknown";
+                activity = MessageQueueTracing.StartConsumerActivity(
+                    payloadTypeName,
+                    args.BasicProperties.Headers,
+                    subscriptionName,
+                    messageText,
+                    MessageQueueTracing.SystemRabbitMq);
 
                 foreach (var handler in messageHandlers.GetValueOrDefault(message.Payload!.GetType()) ?? throw new HandlerNotFoundException(message.Payload.GetType().AssemblyQualifiedName!, messageText))
                     await handler(message.Payload, args.CancellationToken);
