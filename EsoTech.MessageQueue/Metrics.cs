@@ -26,8 +26,8 @@ namespace EsoTech.MessageQueue
 
         public static readonly Histogram<double> HandlingDuration =
             Meter.CreateHistogram<double>(
-                "service_bus_messages_durations_seconds",
-                "s",
+                "service_bus_messages_durations_milliseconds",
+                "milliseconds",
                 "Duration of performed messages.");
     }
 }
