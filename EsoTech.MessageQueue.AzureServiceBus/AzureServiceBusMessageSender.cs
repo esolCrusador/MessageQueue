@@ -3,9 +3,6 @@ using EsoTech.MessageQueue.Abstractions;
 using EsoTech.MessageQueue.AzureServiceBus;
 using EsoTech.MessageQueue.Serialization;
 using Microsoft.Extensions.Logging;
-using OpenTracing;
-using OpenTracing.Propagation;
-using OpenTracing.Tag;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -20,14 +17,10 @@ namespace EsoTech.MessageQueue.AzureServicebus
         private readonly AzureServiceBusNamingConvention _namingConvention;
         private readonly MessageSerializer _messageSerializer;
         private readonly AzureServiceBusManager _azureServiceBusManager;
-        private readonly TracerFactory _tracerFactory;
         private readonly ConcurrentDictionary<string, Task<ServiceBusSender>> _sendersByTopic;
         private readonly ILogger<AzureServiceBusMessageSender> _logger;
 
-        private ITracer Tracer => _tracerFactory.Tracer;
-
         public AzureServiceBusMessageSender(
-            TracerFactory tracerFactory,
             AzureServiceBusNamingConvention namingConvention,
             MessageSerializer messageSerializer,
             AzureServiceBusClientHolder serviceBusClientHolder,
@@ -35,7 +28,6 @@ namespace EsoTech.MessageQueue.AzureServicebus
             ILogger<AzureServiceBusMessageSender> logger)
         {
             _sendersByTopic = new ConcurrentDictionary<string, Task<ServiceBusSender>>();
-            _tracerFactory = tracerFactory;
             _serviceBusClient = serviceBusClientHolder.Instance;
             _namingConvention = namingConvention;
             _messageSerializer = messageSerializer;
@@ -105,6 +97,7 @@ namespace EsoTech.MessageQueue.AzureServicebus
 
         private async Task Send(ServiceBusSender sender, object msg, TimeSpan? delay = default)
         {
+            using var activity = MessageQueueTracing.StartSenderActivity($"Sending {msg.GetType().Name}", sender.EntityPath);
             try
             {
                 await sender.SendMessageAsync(CreateMessage(msg, delay));
@@ -119,6 +112,7 @@ namespace EsoTech.MessageQueue.AzureServicebus
 
         public async Task SendMultiple(ServiceBusSender sender, IEnumerable<object> eventMessages)
         {
+            using var activity = MessageQueueTracing.StartSenderActivity($"Sending {string.Join(", ", eventMessages.GroupBy(m => m.GetType()).Select(g => $"{g.Key.Name}: {g.Count()} messages"))}", sender.EntityPath);
             try
             {
                 await sender.SendMessagesAsync(eventMessages.Select(m => CreateMessage(m)));
@@ -133,52 +127,35 @@ namespace EsoTech.MessageQueue.AzureServicebus
 
         private ServiceBusMessage CreateMessage(object eventMessage, TimeSpan? delay = default)
         {
-            ISpan? span = null;
+            var type = eventMessage.GetType();
+            var serializedMessage = _messageSerializer.SerializeToString(eventMessage, type);
 
-            try
+
+            var wrapped = new Message
             {
-                var type = eventMessage.GetType();
-                var serializedMessage = _messageSerializer.SerializeToString(eventMessage, type);
+                Payload = eventMessage
+            };
 
+            MessageQueueTracing.EnrichSenderActivity(type, serializedMessage);
+            MessageQueueTracing.EnrichSenderHeaders(wrapped.Headers);
 
-                var wrapped = new Message
+            _logger.LogInformation("Sending Message {PayloadType}, {MessageBody}", type, serializedMessage);
+
+            var bytes = _messageSerializer.Serialize(wrapped);
+
+            var message = new ServiceBusMessage(bytes)
+            {
+                ApplicationProperties =
                 {
-                    Payload = eventMessage
-                };
-
-                if (Tracer != null)
-                {
-                    span = Tracer
-                        .BuildSpan($"Send {type.Name}")
-                        .WithTag(Tags.Component, "MessageQueue")
-                        .WithTag(Tags.SpanKind, Tags.SpanKindProducer)
-                        .WithTag("mq.message_name", type.Name)
-                        .WithTag("mq.message", serializedMessage)
-                        .Start();
-
-                    Tracer.Inject(span.Context, BuiltinFormats.TextMap, new TextMapInjectAdapter(wrapped.Headers));
+                    // Warning: subscription filters use this property, don't change.
+                    ["EsoTechMessageKind"] = _namingConvention.GetSubscriptionFilterValue(type)
                 }
-                _logger.LogInformation("Sending Message {PayloadType}, {MessageBody}", type, serializedMessage);
+            };
 
-                var bytes = _messageSerializer.Serialize(wrapped);
+            if (delay.HasValue)
+                message.ScheduledEnqueueTime = DateTimeOffset.UtcNow + delay.Value;
 
-                var message = new ServiceBusMessage(bytes)
-                {
-                    ApplicationProperties =
-                    {
-                        // Warning: subscription filters use this property, don't change.
-                        ["EsoTechMessageKind"] = _namingConvention.GetSubscriptionFilterValue(type)
-                    }
-                };
-                if (delay.HasValue)
-                    message.ScheduledEnqueueTime = DateTimeOffset.UtcNow + delay.Value;
-
-                return message;
-            }
-            finally
-            {
-                span?.Finish();
-            }
+            return message;
         }
     }
 }

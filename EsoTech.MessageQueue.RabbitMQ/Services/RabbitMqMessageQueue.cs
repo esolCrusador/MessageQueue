@@ -5,6 +5,7 @@ using RabbitMQ.Client;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -60,16 +61,6 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             );
         }
 
-        public async Task PublishCommand(object message, CancellationToken cancellationToken)
-        {
-            var messageType = message.GetType();
-            var queueName = _queueNames.GetOrAdd(messageType, _namingConvention.GetQueueName);
-
-            await _rabbitMqQueueFactory.CreateQueueue(queueName, cancellationToken);
-
-            await PublishMessage(queueName, message, cancellationToken);
-        }
-
         public async Task SendCommand(object commandMessage)
         {
             var messageType = commandMessage.GetType();
@@ -94,7 +85,15 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
         private async Task PublishMessage(string destanation, object message, CancellationToken cancellationToken)
         {
             var messageType = message.GetType();
+            using var activity = MessageQueueTracing.StartSenderActivity($"Sending {messageType.Name}", destanation);
             var routingKey = _routingKeys.GetOrAdd(messageType, _namingConvention.GetRoutingKey);
+
+            MessageQueueTracing.EnrichSenderActivity(messageType, _messageSerializer.SerializeToString(message, messageType));
+            var headers = new Dictionary<string, object?>
+            {
+                [NamingConvention.RediliveryCountHeader] = "0"
+            };
+            MessageQueueTracing.EnrichSenderHeaders(headers);
 
             await using var channelLock = await _rabbitMQClient.CaptureSenderChannel();
             var channel = channelLock.Channel;
@@ -104,10 +103,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             {
                 CorrelationId = Guid.NewGuid().ToString(),
                 ContentType = "application/json",
-                Headers = new Dictionary<string, object?>
-                {
-                    [NamingConvention.RediliveryCountHeader] = "0"
-                }
+                Headers = headers
             },
             _messageSerializer.Serialize(new Message
             {

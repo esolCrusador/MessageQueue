@@ -8,6 +8,7 @@ using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reactive;
@@ -338,13 +339,15 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             string? messageText = null;
             Message? message = null;
 
+            Activity? activity = null;
             try
             {
                 message = _messageSerializer.Deserialize(args.Body.Span);
                 messageText = _messageSerializer.SerializeToString(message, typeof(Message));
-                _logger.LogInformation("Subscription: {Queue}. Handling message {Message}", subscriptionName, messageText);
 
                 await WaitBeforeHandle;
+
+                activity = MessageQueueTracing.StartConsumerActivity($"Handling message {message.GetType().Name}", args.BasicProperties.Headers, subscriptionName, messageText);
 
                 foreach (var handler in messageHandlers.GetValueOrDefault(message.Payload!.GetType()) ?? throw new HandlerNotFoundException(message.Payload.GetType().AssemblyQualifiedName!, messageText))
                     await handler(message.Payload, args.CancellationToken);
@@ -409,6 +412,10 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                 }
 
                 await channel.BasicAckAsync(args.DeliveryTag, false);
+            }
+            finally
+            {
+                activity?.Dispose();
             }
         }
 

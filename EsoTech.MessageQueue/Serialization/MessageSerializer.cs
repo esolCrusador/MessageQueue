@@ -38,7 +38,7 @@ namespace EsoTech.MessageQueue.Serialization
                 var timeToDeliver = DateTime.UtcNow.Ticks - deserialized.TimestampInTicks;
                 var timeSpan = TimeSpan.FromTicks(Math.Max(timeToDeliver, 0));
 
-                Metrics.DeliveryTime.Record((decimal)timeSpan.TotalMilliseconds);
+                Metrics.DeliveryTime.Record(timeSpan.TotalMilliseconds);
             }
 
             return deserialized ?? throw new ArgumentException("Could not deserialize", nameof(bytes));

@@ -5,8 +5,6 @@ using EsoTech.MessageQueue.Extensions;
 using EsoTech.MessageQueue.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using OpenTracing.Propagation;
-using OpenTracing.Tag;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -65,7 +63,6 @@ namespace EsoTech.MessageQueue.AzureServiceBus
         {
             _eventHandlers = eventHandlers;
             _commandHandlers = commandHandlers;
-            _tracerFactory = tracerFactory;
             _messageQueueConfiguration = messageQueueConfiguration.Value;
             _serviceBusClient = serviceBusClientHolder.Instance;
             _namingConvention = namingConvention;
@@ -78,26 +75,6 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                 _handleNext = new Subject<Unit>();
                 _waitBeforeHandle = _handleNext.PostponeNotHandled();
             }
-        }
-
-        public AzureServiceBusConsumer(
-            IEnumerable<IEventMessageHandler> eventHandlers,
-            IEnumerable<ICommandMessageHandler> commandHandlers,
-            IOptions<MessageQueueConfiguration> messageQueueConfiguration,
-            AzureServiceBusNamingConvention namingConvention,
-            AzureServiceBusClientHolder serviceBusClientHolder,
-            MessageSerializer messageSerializer,
-            AzureServiceBusManager azureServiceBusManager,
-            ILogger<AzureServiceBusConsumer> logger)
-            : this(eventHandlers, commandHandlers,
-                 null,
-                 messageQueueConfiguration,
-                 namingConvention,
-                 serviceBusClientHolder,
-                 messageSerializer,
-                 azureServiceBusManager,
-                 logger)
-        {
         }
 
         public async Task Initialize(CancellationToken cancellation)
@@ -284,6 +261,7 @@ namespace EsoTech.MessageQueue.AzureServiceBus
             var topicName = _namingConvention.GetTopicName(payloadType);
             var serializedMessage = _messageSerializer.SerializeToString(message.Payload, payloadType);
 
+            var tags = new TagList { { "EventName", eventName }, { "TopicName", topicName } };
             try
             {
                 if (args.Message.DeliveryCount > 0 && _notHandledMessages.TryGetValue(args.Message.MessageId, out var handlers))
@@ -305,7 +283,8 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                     payloadType,
                     serializedMessage);
 
-                using (MessagesDurations.WithLabels(eventName, topicName).NewTimer())
+                var handlingSw = Stopwatch.StartNew();
+                try
                 {
                     int failed = 0;
                     var handlerTasks = new List<KeyValuePair<HandlerByMessageTypeEntry, Task>>(handlers.Length);
@@ -347,16 +326,20 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                         }
                     }
                 }
+                finally
+                {
+                    Metrics.HandlingDuration.Record(handlingSw.ElapsedMilliseconds, tags);
+                }
 
                 _handled.OnNext(Unit.Default);
                 await args.CompleteMessageAsync(args.Message, args.CancellationToken);
 
-                ExecutedMessages.WithLabels(eventName, topicName).Inc();
+                Metrics.ExecutedMessages.Add(1, tags);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "ProcessMessage error");
-                FailedMessages.WithLabels(eventName, topicName).Inc();
+                Metrics.FailedMessages.Add(1, tags);
             }
         }
 
@@ -374,46 +357,21 @@ namespace EsoTech.MessageQueue.AzureServiceBus
                     .Subscribe()
                 : DefaultDisposable;
 
-            if (Tracer == null)
-            {
-                await handlerInfo.Handle.Value(message.Payload, args.CancellationToken);
-
-                return;
-            }
-
-            var msgType = message.Payload.GetType().Name;
-            var currentActive = Tracer.ActiveSpan;
-            var spanContext = Tracer.Extract(BuiltinFormats.TextMap, new TextMapExtractAdapter(message.Headers));
+            using var activity = MessageQueueTracing.StartConsumerActivity(
+                $"Handling {message.Payload.GetType().Name}",
+                message.Headers,
+                args.EntityPath,
+                serializedMessage
+            );
 
             try
             {
-                using (Tracer.BuildSpan($"{msgType}")
-                    .WithTag(Tags.Component, "MessageQueue")
-                    .WithTag(Tags.SpanKind, Tags.SpanKindConsumer)
-                    .WithTag("mq.message", serializedMessage)
-                    .AsChildOf(spanContext)
-                    .StartActive(true))
-
-                    try
-                    {
-                        await handlerInfo.Handle.Value(message.Payload, args.CancellationToken);
-                    }
-                    catch (Exception e)
-                    {
-                        Tracer.ActiveSpan?.Log(new Dictionary<string, object>
-                                    {
-                                        {"type", e.GetType().Name}, {"message", e.Message}, {"stackTrace", e.StackTrace},
-                                        {"data", e.Data}
-                                    });
-
-                        Tracer.ActiveSpan?.SetTag("error", true);
-
-                        throw;
-                    }
+                await handlerInfo.Handle.Value(message.Payload, args.CancellationToken);
             }
-            finally
+            catch (Exception e)
             {
-                Tracer.ScopeManager.Activate(currentActive, true);
+                _logger.LogError(e, "Handling of message {MessageType} {Message} failed", message.PayloadTypeName, serializedMessage);
+                throw;
             }
         }
 
