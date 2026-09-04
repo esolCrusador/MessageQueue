@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="EsoTech.MessageQueue.Abstractions/EsoTech.MessageQueue.Abstractions.csproj" />
+  <Project Path="EsoTech.MessageQueue.AzureServicebus/EsoTech.MessageQueue.AzureServicebus.csproj" />
+  <Project Path="EsoTech.MessageQueue.RabbitMQ/EsoTech.MessageQueue.RabbitMQ.csproj" />
+  <Project Path="EsoTech.MessageQueue.Testing/EsoTech.MessageQueue.Testing.csproj" />
+  <Project Path="EsoTech.MessageQueue.Tests/EsoTech.MessageQueue.Tests.csproj" />
+  <Project Path="EsoTech.MessageQueue/EsoTech.MessageQueue.csproj" />
+</Solution>
