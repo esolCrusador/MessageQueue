@@ -83,6 +83,16 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                 h => h.GetType().GetInterfaces().Where(it => it.IsGenericType && it.GetGenericTypeDefinition() == typeof(IEventMessageHandler<>)).ToList()
             );
 
+            var isBroadcastHandler = handlerTypes.Select(kvp => kvp.Key.GetType()).Distinct()
+                .ToDictionary(handlerType => handlerType, _namingConvention.IsBroadcast);
+            var broadcastConflicts = handlerTypes.SelectMany(
+                kvp => kvp.Value.Select(ht => (MessageType: ht.GenericTypeArguments[0], IsBroadcast: isBroadcastHandler[kvp.Key.GetType()]))
+            ).GroupBy(x => x.MessageType)
+            .Where(g => g.Select(x => x.IsBroadcast).Distinct().Count() > 1);
+
+            foreach (var conflict in broadcastConflicts)
+                throw new InvalidOperationException($"Event {conflict.Key.FullName} is handled by both broadcast and non-broadcast handlers. An event must be either broadcast or regular within a service.");
+
             var subscriptions = handlerTypes.SelectMany(kvp =>
             {
                 var subscriptionName = _namingConvention.GetSubscriptionName(kvp.Key.GetType());
@@ -112,10 +122,12 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                  async (kvp, cancellation) =>
                  {
                      var (subscription, messageHandlers) = kvp;
+                     var isBroadcast = isBroadcastHandler[messageHandlers[0].Handler.GetType()];
                      await StartConsumerLoop(
                          new SubscriptionFactory(subscription.Subscription, typeof(IEventMessageHandler<>),
                          channel => _rabbitMQClient.CreateEventSubscription(
                              channel,
+                             isBroadcast,
                              subscription.Topic,
                              subscription.Subscription,
                              messageHandlers.Select(mh => mh.RoutingKey),
@@ -128,6 +140,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                             cancellation
                          )),
                          messageHandlers,
+                         isBroadcast,
                          cancellation
                      );
                  });
@@ -181,6 +194,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                             cancellation)
                         ),
                         messageHandlers,
+                        false,
                         cancellation
                     );
                 });
@@ -192,14 +206,14 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
         private record struct CommandMessageSubscription(string Queue, string RoutingKey, Type MessageType, ICommandMessageHandler Handler);
         private record struct SubscriptionFactory(string Name, Type HandlerGenericType, Func<IChannel, Task> Create, Func<IChannel, string, Task> RemoveRoutingKey);
 
-        private Task StartConsumerLoop(SubscriptionFactory subscriptionFactory, IReadOnlyCollection<MessageHandler> handlers, CancellationToken cancellationToken)
+        private Task StartConsumerLoop(SubscriptionFactory subscriptionFactory, IReadOnlyCollection<MessageHandler> handlers, bool isBroadcast, CancellationToken cancellationToken)
         {
             var subscribed = new TaskCompletionSource();
-            var _ = ConsumerLoop(subscribed, subscriptionFactory, handlers, cancellationToken);
+            var _ = ConsumerLoop(subscribed, subscriptionFactory, handlers, isBroadcast, cancellationToken);
 
             return subscribed.Task;
         }
-        private async Task ConsumerLoop(TaskCompletionSource subscribed, SubscriptionFactory subscriptionFactory, IReadOnlyCollection<MessageHandler> handlers, CancellationToken cancellationToken)
+        private async Task ConsumerLoop(TaskCompletionSource subscribed, SubscriptionFactory subscriptionFactory, IReadOnlyCollection<MessageHandler> handlers, bool isBroadcast, CancellationToken cancellationToken)
         {
             var messageHandlers = handlers.GroupBy(h => h.MessageType)
                 .ToDictionary(g => g.Key, g => g.Select(h => CreateHandlerDelegate(h.Handler, h.MessageType, subscriptionFactory.HandlerGenericType)).ToList());
@@ -258,7 +272,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                     consumer.ReceivedAsync += async (sender, args) =>
                     {
                         await (parallelism ?? _parallelism).WaitAsync(cancellationToken);
-                        var _ = HandleMessage(parallelism ?? _parallelism, channel, subscriptionFactory.Name, args, messageHandlers, cancellationToken)
+                        var _ = HandleMessage(parallelism ?? _parallelism, channel, subscriptionFactory.Name, isBroadcast, args, messageHandlers, cancellationToken)
                             .ContinueWith(async task =>
                             {
                                 if (!task.IsFaulted)
@@ -332,7 +346,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
 
             return new SemaphoreSlim(maxConcurrentMessages.Value);
         }
-        private async Task HandleMessage(SemaphoreSlim parallelism, IChannel channel, string subscriptionName, BasicDeliverEventArgs args, Dictionary<Type, List<Func<object, CancellationToken, Task>>> messageHandlers, CancellationToken cancellationToken)
+        private async Task HandleMessage(SemaphoreSlim parallelism, IChannel channel, string subscriptionName, bool isBroadcasting, BasicDeliverEventArgs args, Dictionary<Type, List<Func<object, CancellationToken, Task>>> messageHandlers, CancellationToken cancellationToken)
         {
             var started = DateTimeOffset.UtcNow;
             string? messageText = null;
@@ -377,18 +391,23 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                 };
                 if (rediliveryCount >= _options.MaxDeliveryCount)
                 {
-                    var deadLetterQueue = await _queueFactory.CreateDeadLetterQueueue(subscriptionName, cancellationToken);
+                    if (isBroadcasting)
+                        _logger.LogError("Coldn't handle broadcasting events after all retries");
+                    else
+                    {
+                        var deadLetterQueue = await _queueFactory.CreateDeadLetterQueueue(subscriptionName, cancellationToken);
 
-                    properties.Headers[NamingConvention.DeadletterRoutingKeyHeader] = args.RoutingKey;
-                    _logger.LogWarning("Sending message {Message} to deadletter queue after {Retries} retries", messageText, rediliveryCount);
-                    await channel.BasicPublishAsync(
-                        deadLetterQueue,
-                        "",
-                        true,
-                        properties,
-                        body: message == null ? args.Body.ToArray() : _messageSerializer.Serialize(message),
-                        cancellationToken
-                    );
+                        properties.Headers[NamingConvention.DeadletterRoutingKeyHeader] = args.RoutingKey;
+                        _logger.LogWarning("Sending message {Message} to deadletter queue after {Retries} retries", messageText, rediliveryCount);
+                        await channel.BasicPublishAsync(
+                            deadLetterQueue,
+                            "",
+                            true,
+                            properties,
+                            body: message == null ? args.Body.ToArray() : _messageSerializer.Serialize(message),
+                            cancellationToken
+                        );
+                    }
                 }
                 else
                 {

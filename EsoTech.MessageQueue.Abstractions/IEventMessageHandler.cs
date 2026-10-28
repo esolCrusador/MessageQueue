@@ -11,4 +11,8 @@ namespace EsoTech.MessageQueue.Abstractions
     public interface IEventMessageHandler
     {
     }
+
+    public interface IBroadcastingEventMessageHandler
+    {
+    }
 }
