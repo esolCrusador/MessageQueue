@@ -83,15 +83,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                 h => h.GetType().GetInterfaces().Where(it => it.IsGenericType && it.GetGenericTypeDefinition() == typeof(IEventMessageHandler<>)).ToList()
             );
 
-            var isBroadcastHandler = handlerTypes.Select(kvp => kvp.Key.GetType()).Distinct()
-                .ToDictionary(handlerType => handlerType, _namingConvention.IsBroadcast);
-            var broadcastConflicts = handlerTypes.SelectMany(
-                kvp => kvp.Value.Select(ht => (MessageType: ht.GenericTypeArguments[0], IsBroadcast: isBroadcastHandler[kvp.Key.GetType()]))
-            ).GroupBy(x => x.MessageType)
-            .Where(g => g.Select(x => x.IsBroadcast).Distinct().Count() > 1);
-
-            foreach (var conflict in broadcastConflicts)
-                throw new InvalidOperationException($"Event {conflict.Key.FullName} is handled by both broadcast and non-broadcast handlers. An event must be either broadcast or regular within a service.");
+            var isBroadcastHandler = ValidateBroadcast(handlerTypes, "Event");
 
             var subscriptions = handlerTypes.SelectMany(kvp =>
             {
@@ -153,16 +145,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                 h => h.GetType().GetInterfaces().Where(it => it.IsGenericType && it.GetGenericTypeDefinition() == typeof(ICommandMessageHandler<>)).ToList()
             );
 
-            var isBroadcastHandler = handlerTypes.Select(kvp => kvp.Key.GetType()).Distinct()
-                .ToDictionary(handlerType => handlerType, _namingConvention.IsBroadcast);
-
-            var broadcastConflicts = handlerTypes.SelectMany(
-                kvp => kvp.Value.Select(ht => (MessageType: ht.GenericTypeArguments[0], IsBroadcast: isBroadcastHandler[kvp.Key.GetType()]))
-            ).GroupBy(x => x.MessageType)
-            .Where(g => g.Select(x => x.IsBroadcast).Distinct().Count() > 1);
-
-            foreach (var conflict in broadcastConflicts)
-                throw new InvalidOperationException($"Command {conflict.Key.FullName} is handled by both broadcast and non-broadcast handlers. A command must be either broadcast or regular within a service.");
+            var isBroadcastHandler = ValidateBroadcast(handlerTypes, "Command");
 
             var subscriptions = handlerTypes.SelectMany(kvp =>
             {
@@ -217,6 +200,23 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                         cancellation
                     );
                 });
+        }
+
+        private Dictionary<Type, bool> ValidateBroadcast<THandler>(Dictionary<THandler, List<Type>> handlerTypes, string messageKind)
+            where THandler : notnull
+        {
+            var isBroadcastHandler = handlerTypes.Select(kvp => kvp.Key.GetType()).Distinct()
+                .ToDictionary(handlerType => handlerType, _namingConvention.IsBroadcast);
+
+            var broadcastConflicts = handlerTypes.SelectMany(
+                kvp => kvp.Value.Select(ht => (MessageType: ht.GenericTypeArguments[0], IsBroadcast: isBroadcastHandler[kvp.Key.GetType()]))
+            ).GroupBy(x => x.MessageType)
+            .Where(g => g.Select(x => x.IsBroadcast).Distinct().Count() > 1);
+
+            foreach (var conflict in broadcastConflicts)
+                throw new InvalidOperationException($"{messageKind} {conflict.Key.FullName} is handled by both broadcast and non-broadcast handlers. It must be either broadcast or regular within a service.");
+
+            return isBroadcastHandler;
         }
 
         private record struct TopicSubscription(string Topic, string Subscription);
