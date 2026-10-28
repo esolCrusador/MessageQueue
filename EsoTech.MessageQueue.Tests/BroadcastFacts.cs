@@ -141,6 +141,53 @@ namespace EsoTech.MessageQueue.Tests
         }
 
         [Fact]
+        public async Task Mixed_Events_In_Same_Instance_Should_Be_Delivered_Via_Different_Queues()
+        {
+            var instance = CreateInstance("broadcast-facts-instance-1", services => services
+                .AddEventMessageHandler<BroadcastEventHandler1>()
+                .AddEventMessageHandler<WorkEventHandler>());
+            await Initialize(instance);
+
+            var queue = instance.GetRequiredService<IMessageQueue>();
+            await queue.SendEvent(new BroadcastMsg { Text = "to everyone" });
+            await queue.SendEvent(new WorkMsg { Text = "to exactly one instance" });
+
+            var broadcastHandler = instance.GetRequiredService<BroadcastEventHandler1>();
+            var workHandler = instance.GetRequiredService<WorkEventHandler>();
+            await WaitUntil(() => broadcastHandler.Log.Count == 1 && workHandler.Log.Count == 1);
+
+            broadcastHandler.Log.Count.Should().Be(1);
+            workHandler.Log.Count.Should().Be(1);
+        }
+
+        [Fact]
+        public async Task Mixed_Events_Should_Broadcast_Some_And_Compete_Others()
+        {
+            var instance1 = CreateInstance("broadcast-facts-instance-1", services => services
+                .AddEventMessageHandler<BroadcastEventHandler1>()
+                .AddEventMessageHandler<WorkEventHandler>());
+            var instance2 = CreateInstance("broadcast-facts-instance-2", services => services
+                .AddEventMessageHandler<BroadcastEventHandler1>()
+                .AddEventMessageHandler<WorkEventHandler>());
+            await Initialize(instance1, instance2);
+
+            var queue = instance1.GetRequiredService<IMessageQueue>();
+            await queue.SendEvent(new BroadcastMsg { Text = "to everyone" });
+            await queue.SendEvent(new WorkMsg { Text = "to exactly one instance" });
+
+            var broadcastHandler1 = instance1.GetRequiredService<BroadcastEventHandler1>();
+            var broadcastHandler2 = instance2.GetRequiredService<BroadcastEventHandler1>();
+            var workHandler1 = instance1.GetRequiredService<WorkEventHandler>();
+            var workHandler2 = instance2.GetRequiredService<WorkEventHandler>();
+            await WaitUntil(() => broadcastHandler1.Log.Count == 1 && broadcastHandler2.Log.Count == 1 && workHandler1.Log.Count + workHandler2.Log.Count == 1);
+            await Task.Delay(TimeSpan.FromSeconds(2));
+
+            broadcastHandler1.Log.Count.Should().Be(1);
+            broadcastHandler2.Log.Count.Should().Be(1);
+            (workHandler1.Log.Count + workHandler2.Log.Count).Should().Be(1);
+        }
+
+        [Fact]
         public async Task Broadcast_Retry_Should_Redeliver_Only_To_Failing_Instance()
         {
             var instance1 = CreateInstance("broadcast-facts-instance-1", services => services.AddEventMessageHandler<FailingBroadcastEventHandler>(), maxDeliveryCount: 3);

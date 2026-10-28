@@ -153,12 +153,27 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                 h => h.GetType().GetInterfaces().Where(it => it.IsGenericType && it.GetGenericTypeDefinition() == typeof(ICommandMessageHandler<>)).ToList()
             );
 
+            var isBroadcastHandler = handlerTypes.Select(kvp => kvp.Key.GetType()).Distinct()
+                .ToDictionary(handlerType => handlerType, _namingConvention.IsBroadcast);
+
+            var broadcastConflicts = handlerTypes.SelectMany(
+                kvp => kvp.Value.Select(ht => (MessageType: ht.GenericTypeArguments[0], IsBroadcast: isBroadcastHandler[kvp.Key.GetType()]))
+            ).GroupBy(x => x.MessageType)
+            .Where(g => g.Select(x => x.IsBroadcast).Distinct().Count() > 1);
+
+            foreach (var conflict in broadcastConflicts)
+                throw new InvalidOperationException($"Command {conflict.Key.FullName} is handled by both broadcast and non-broadcast handlers. A command must be either broadcast or regular within a service.");
+
             var subscriptions = handlerTypes.SelectMany(kvp =>
             {
+                var isBroadcast = isBroadcastHandler[kvp.Key.GetType()];
+
                 return kvp.Value.Select(ht =>
                 {
                     var messageType = ht.GenericTypeArguments[0];
-                    var queueName = _namingConvention.GetQueueName(messageType);
+                    var queueName = isBroadcast
+                        ? _namingConvention.GetBroadcastQueueName(messageType)
+                        : _namingConvention.GetQueueName(messageType);
 
                     return new CommandMessageSubscription(
                                         queueName,
@@ -179,12 +194,16 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                 async (kvp, cancellation) =>
                 {
                     var (queueName, messageHandlers) = kvp;
+                    var isBroadcast = isBroadcastHandler[messageHandlers[0].Handler.GetType()];
+                    var commandExchangeName = _namingConvention.GetQueueName(messageHandlers[0].MessageType);
 
                     await StartConsumerLoop(
                         new SubscriptionFactory(queueName, typeof(ICommandMessageHandler<>),
                         channel => _rabbitMQClient.CreateCommandSubscription(
                             channel,
+                            isBroadcast,
                             queueName,
+                            commandExchangeName,
                             messageHandlers.Select(mh => mh.RoutingKey),
                             cancellation),
                         (channel, routingKey) => _rabbitMQClient.RemoveCommandSubscription(
@@ -194,7 +213,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                             cancellation)
                         ),
                         messageHandlers,
-                        false,
+                        isBroadcast,
                         cancellation
                     );
                 });
