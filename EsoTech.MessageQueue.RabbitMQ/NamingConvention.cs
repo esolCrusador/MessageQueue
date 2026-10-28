@@ -61,6 +61,11 @@ namespace EsoTech.MessageQueue.RabbitMQ
             return $"{GetServiceName(messageType)}commands";
         }
 
+        public string GetBroadcastQueueName(Type messageType)
+        {
+            return $"{GetServiceName(messageType)}commands.{_instanceId}";
+        }
+
         public string GetTopicSubscriptionName(string topicName, string subscriptionName) => $"{topicName}-{subscriptionName}";
 
         public bool IsBroadcast(Type handlerType) => handlerType.IsDefined(typeof(BroadcastAttribute));

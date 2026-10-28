@@ -169,11 +169,32 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
         public Task CreateQueue(IChannel channel, string queueName, CancellationToken cancellationToken) =>
             channel.ExchangeDeclareAsync(queueName, ExchangeType.Direct, true, false, cancellationToken: cancellationToken);
 
-        public async Task CreateCommandSubscription(IChannel channel, string queueName, IEnumerable<string> rotingKeys, CancellationToken cancellationToken)
+        public Task CreateCommandSubscription(IChannel channel, bool isBroadcast, string queueName, string commandExchangeName, IEnumerable<string> rotingKeys, CancellationToken cancellationToken)
+        {
+            return isBroadcast
+                ? CreateBroadcastCommandSubscription(channel, queueName, commandExchangeName, rotingKeys, cancellationToken)
+                : CreateCommandSubscription(channel, queueName, rotingKeys, cancellationToken);
+        }
+
+        private async Task CreateCommandSubscription(IChannel channel, string queueName, IEnumerable<string> rotingKeys, CancellationToken cancellationToken)
         {
             await CreateQueue(channel, queueName, cancellationToken);
 
             await channel.QueueDeclareAsync(queueName, durable: true, exclusive: false, autoDelete: false, cancellationToken: cancellationToken);
+            await Task.WhenAll(rotingKeys.Select(rk => BindRotingKey(channel, queueName, rk, cancellationToken)));
+        }
+
+        private async Task CreateBroadcastCommandSubscription(IChannel channel, string queueName, string commandExchangeName, IEnumerable<string> rotingKeys, CancellationToken cancellationToken)
+        {
+            await CreateQueue(channel, commandExchangeName, cancellationToken);
+
+            await channel.ExchangeDeclareAsync(queueName, ExchangeType.Direct, durable: false, autoDelete: true, cancellationToken: cancellationToken);
+            await Task.WhenAll(rotingKeys.Select(rk => channel.ExchangeBindAsync(queueName, commandExchangeName, rk, cancellationToken: cancellationToken)));
+
+            await channel.QueueDeclareAsync(queueName, durable: false, exclusive: false, autoDelete: true,
+                arguments: new Dictionary<string, object?> { ["x-expires"] = (long)_broadcastQueueExpiration.TotalMilliseconds },
+                cancellationToken: cancellationToken);
+
             await Task.WhenAll(rotingKeys.Select(rk => BindRotingKey(channel, queueName, rk, cancellationToken)));
         }
 
