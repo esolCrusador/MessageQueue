@@ -83,7 +83,8 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
                 h => h.GetType().GetInterfaces().Where(it => it.IsGenericType && it.GetGenericTypeDefinition() == typeof(IEventMessageHandler<>)).ToList()
             );
 
-            var isBroadcastHandler = handlerTypes.ToDictionary(kvp => kvp.Key.GetType(), kvp => _namingConvention.IsBroadcast(kvp.Key.GetType()));
+            var isBroadcastHandler = handlerTypes.Select(kvp => kvp.Key.GetType()).Distinct()
+                .ToDictionary(handlerType => handlerType, _namingConvention.IsBroadcast);
             var broadcastConflicts = handlerTypes.SelectMany(
                 kvp => kvp.Value.Select(ht => (MessageType: ht.GenericTypeArguments[0], IsBroadcast: isBroadcastHandler[kvp.Key.GetType()]))
             ).GroupBy(x => x.MessageType)
