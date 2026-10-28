@@ -1,6 +1,7 @@
 ﻿<SolutionConfiguration>
   <Settings>
     <AllowParallelTestExecution>False</AllowParallelTestExecution>
+    <RdiConfigured>True</RdiConfigured>
     <SolutionConfigured>True</SolutionConfigured>
   </Settings>
   <EngineModes>

@@ -13,6 +13,8 @@ namespace EsoTech.MessageQueue.RabbitMQ
         public int SendersPool { get; set; } = 5;
         public int InitializationParallelism { get; set; } = 20;
         public int MaxDeliveryCount { get; set; } = 20;
+        public string? InstanceId { get; set; }
+        public TimeSpan BroadcastQueueExpiration { get; set; } = TimeSpan.FromMinutes(5);
     }
     public class RabbitMQConnectionConfiguration
     {

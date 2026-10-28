@@ -15,6 +15,7 @@ namespace EsoTech.MessageQueue.RabbitMQ
         private readonly Regex _toReplace = new Regex("(`\\d+)|,", RegexOptions.Compiled);
         private readonly HashFunction _hashFunction;
         private readonly Dictionary<string, string> _serviceNamesRemap;
+        private readonly string _instanceId;
 
         public const string DeadletterQueuePostfix = "-deadletter";
         public const string DeadletterRoutingKeyHeader = "x-deadletter-routing-key";
@@ -24,6 +25,9 @@ namespace EsoTech.MessageQueue.RabbitMQ
         {
             _hashFunction = hashFunction;
             _serviceNamesRemap = configuration.Value.ServicesRemap;
+            // The random suffix guarantees uniqueness across instances: ProcessId is per-machine (and usually 1 in containers),
+            // so MachineName-ProcessId alone can collide between replicas, silently turning broadcast into competing consumption.
+            _instanceId = (configuration.Value.InstanceId ?? $"{Environment.MachineName}-{Environment.ProcessId}-{Guid.NewGuid().ToString("N")[..8]}").ToLowerInvariant();
         }
 
         public string GetSubscriptionName(Type handlerType)
@@ -41,6 +45,8 @@ namespace EsoTech.MessageQueue.RabbitMQ
                 if (subscriptionAttribute.Postfix != null)
                     subscriptionName = $"{subscriptionName}.{subscriptionAttribute.Postfix}";
             }
+            if (IsBroadcast(handlerType))
+                subscriptionName += $".{_instanceId}";
 
             return subscriptionName;
         }
@@ -56,6 +62,10 @@ namespace EsoTech.MessageQueue.RabbitMQ
         }
 
         public string GetTopicSubscriptionName(string topicName, string subscriptionName) => $"{topicName}-{subscriptionName}";
+
+        public bool IsBroadcast(Type handlerType) => handlerType.IsDefined(typeof(BroadcastAttribute));
+
+        public string GetBroadcastTopicSubscriptionName(string topicName, string subscriptionName) => $"{topicName}-{subscriptionName}-{_instanceId}";
 
         private const int MaxRoutingKeyLength = 255;
 

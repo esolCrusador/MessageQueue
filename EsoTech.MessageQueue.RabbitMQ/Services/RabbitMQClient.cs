@@ -18,6 +18,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
         private readonly ConnectionFactory _factory;
         private readonly RabbitMqManagement _rabbitMqManager;
         private readonly ChannelsPool _channelsPool;
+        private readonly TimeSpan _broadcastQueueExpiration;
         private readonly ILogger<RabbitMQClient> _logger;
 
         private IConnection? _connection;
@@ -30,6 +31,7 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             _virtualHost = _connectionConfiguration.VirtualHost;
             _rabbitMqManager = rabbitMqManager;
             _channelsPool = new ChannelsPool(options.Value.SendersPool);
+            _broadcastQueueExpiration = options.Value.BroadcastQueueExpiration;
             _logger = logger;
 
             _factory = new ConnectionFactory
@@ -126,7 +128,14 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
         public Task CreateTopic(IChannel channel, string topicName, CancellationToken cancellationToken) =>
             channel.ExchangeDeclareAsync(topicName, ExchangeType.Topic, true, cancellationToken: cancellationToken);
 
-        public async Task CreateEventSubscription(IChannel channel, string topicName, string subscriptionName, IEnumerable<string> rotingKeys, CancellationToken cancellationToken)
+        public Task CreateEventSubscription(IChannel channel, bool isBroadcast, string topicName, string subscriptionName, IEnumerable<string> rotingKeys, CancellationToken cancellationToken)
+        {
+            return isBroadcast
+                ? CreateBroadcastEventSubscription(channel, topicName, subscriptionName, rotingKeys, cancellationToken)
+                : CreateEventSubscription(channel, topicName, subscriptionName, rotingKeys, cancellationToken);
+        }
+
+        private async Task CreateEventSubscription(IChannel channel, string topicName, string subscriptionName, IEnumerable<string> rotingKeys, CancellationToken cancellationToken)
         {
             await CreateTopic(channel, topicName, cancellationToken);
 
@@ -134,6 +143,20 @@ namespace EsoTech.MessageQueue.RabbitMQ.Services
             await Task.WhenAll(rotingKeys.Select(rk => channel.ExchangeBindAsync(subscriptionName, topicName, rk, cancellationToken: cancellationToken)));
 
             await channel.QueueDeclareAsync(subscriptionName, durable: true, exclusive: false, autoDelete: false, cancellationToken: cancellationToken);
+
+            await Task.WhenAll(rotingKeys.Select(rk => BindRotingKey(channel, subscriptionName, rk, cancellationToken)));
+        }
+
+        private async Task CreateBroadcastEventSubscription(IChannel channel, string topicName, string subscriptionName, IEnumerable<string> rotingKeys, CancellationToken cancellationToken)
+        {
+            await CreateTopic(channel, topicName, cancellationToken);
+
+            await channel.ExchangeDeclareAsync(subscriptionName, ExchangeType.Direct, durable: false, autoDelete: true, cancellationToken: cancellationToken);
+            await Task.WhenAll(rotingKeys.Select(rk => channel.ExchangeBindAsync(subscriptionName, topicName, rk, cancellationToken: cancellationToken)));
+
+            await channel.QueueDeclareAsync(subscriptionName, durable: false, exclusive: false, autoDelete: true,
+                arguments: new Dictionary<string, object?> { ["x-expires"] = (long)_broadcastQueueExpiration.TotalMilliseconds },
+                cancellationToken: cancellationToken);
 
             await Task.WhenAll(rotingKeys.Select(rk => BindRotingKey(channel, subscriptionName, rk, cancellationToken)));
         }
